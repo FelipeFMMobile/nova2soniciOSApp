@@ -1,7 +1,7 @@
 SHELL := /bin/zsh
 GOCACHE ?= /private/tmp/sts-go-cache
 
-.PHONY: build test race gateway mcp fmt check nova-install nova-bridge nova-smoke
+.PHONY: build test race gateway mcp fmt check nova-install nova-test nova-bridge nova-smoke
 
 build:
 	env GOCACHE=$(GOCACHE) go build ./...
@@ -26,6 +26,9 @@ check: build test race
 nova-install:
 	python3.12 -m venv services/nova-bridge/.venv
 	services/nova-bridge/.venv/bin/pip install -r services/nova-bridge/requirements.txt
+
+nova-test:
+	PYTHONPATH=services/nova-bridge services/nova-bridge/.venv/bin/python -m unittest discover -s tests/python -v
 
 nova-bridge:
 	PYTHONPATH=services/nova-bridge services/nova-bridge/.venv/bin/python -m nova_bridge.server
