@@ -22,9 +22,9 @@ xcuserdata/
 *.pcm
 *.caf
 /models/
+deploy/runpod/*.local.json
 
 # macOS and editors
 .DS_Store
 .idea/
 .vscode/
-
