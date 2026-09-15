@@ -21,8 +21,14 @@ class FakeInputStream:
 class FakeStream:
     def __init__(self) -> None:
         self.input_stream = FakeInputStream()
+        self.output_stream = FakeOutputStream()
 
     async def await_output(self):
+        return object(), self.output_stream
+
+
+class FakeOutputStream:
+    async def receive(self):
         await asyncio.Future()
 
 
@@ -37,6 +43,23 @@ class FakeClient:
         return self.stream
 
 
+class FakeCredentials:
+    access_key = "test-access-key"
+    secret_key = "test-secret-key"
+    token = "test-session-token"
+
+    def get_frozen_credentials(self):
+        return self
+
+
+class FakeBotoSession:
+    def __init__(self, profile_name=None) -> None:
+        self.profile_name = profile_name
+
+    def get_credentials(self):
+        return FakeCredentials()
+
+
 class NovaSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_session_uses_pt_br_voice_and_audio_contract(self) -> None:
         FakeClient.stream = FakeStream()
@@ -48,7 +71,10 @@ class NovaSessionTests(unittest.IsolatedAsyncioTestCase):
             event_sink=self._ignore,
         )
 
-        with patch("nova_bridge.session.BedrockRuntimeClient", FakeClient):
+        with (
+            patch("nova_bridge.session.BedrockRuntimeClient", FakeClient),
+            patch("nova_bridge.session.boto3.Session", FakeBotoSession),
+        ):
             await session.start()
             events = FakeClient.stream.input_stream.events
             prompt = events[1]["event"]["promptStart"]
@@ -81,4 +107,3 @@ class NovaSessionTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

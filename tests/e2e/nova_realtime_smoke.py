@@ -27,20 +27,35 @@ async def run(url: str, wav_path: str) -> None:
         if ready.get("type") != "session.ready":
             raise RuntimeError(ready)
 
-        chunk_bytes = 2048
-        for offset in range(0, len(pcm), chunk_bytes):
+        # Nova expects roughly 32 ms of real-time audio per frame. At 16 kHz,
+        # mono PCM16, that is 512 samples / 1024 bytes.
+        chunk_bytes = 1024
+        trailing_silence = bytes(16000 * 2)
+        realtime_audio = pcm + trailing_silence
+        for offset in range(0, len(realtime_audio), chunk_bytes):
             await socket.send(json.dumps({
                 "type": "audio.append",
-                "audio": base64.b64encode(pcm[offset : offset + chunk_bytes]).decode("ascii"),
+                "audio": base64.b64encode(
+                    realtime_audio[offset : offset + chunk_bytes]
+                ).decode("ascii"),
             }))
             await asyncio.sleep(0.032)
 
         audio_bytes = 0
+        received_events: list[str] = []
         while audio_bytes == 0:
-            message = json.loads(await asyncio.wait_for(socket.recv(), timeout=60))
+            try:
+                message = json.loads(await asyncio.wait_for(socket.recv(), timeout=60))
+            except TimeoutError as error:
+                raise RuntimeError(
+                    f"Nova returned no audio; received events: {received_events}"
+                ) from error
             if message.get("type") == "error":
                 raise RuntimeError(message.get("message"))
             payload = message.get("payload", {}).get("event", {})
+            received_events.extend(payload.keys())
+            if "bridgeError" in payload:
+                raise RuntimeError(payload["bridgeError"]["message"])
             if "audioOutput" in payload:
                 audio_bytes += len(base64.b64decode(payload["audioOutput"]["content"]))
         await socket.send(json.dumps({"type": "session.stop"}))
@@ -57,4 +72,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

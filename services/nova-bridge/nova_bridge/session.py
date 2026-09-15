@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import boto3
 from aws_sdk_bedrock_runtime.client import (
     BedrockRuntimeClient,
     InvokeModelWithBidirectionalStreamOperationInput,
@@ -16,7 +18,7 @@ from aws_sdk_bedrock_runtime.models import (
     BidirectionalInputPayloadPart,
     InvokeModelWithBidirectionalStreamInputChunk,
 )
-from smithy_aws_core.identity.environment import EnvironmentCredentialsResolver
+from smithy_aws_core.identity import StaticCredentialsResolver
 
 
 EventSink = Callable[[dict[str, Any]], Awaitable[None]]
@@ -41,14 +43,24 @@ class NovaSession:
         self.audio_content_name = str(uuid.uuid4())
         self.stream: Any | None = None
         self.response_task: asyncio.Task[None] | None = None
+        self.response_ready = asyncio.Event()
+        self.response_error: Exception | None = None
         self.active = False
 
     async def start(self, tools: list[dict[str, Any]] | None = None) -> None:
+        profile = os.getenv("AWS_PROFILE")
+        credentials = boto3.Session(profile_name=profile).get_credentials()
+        if credentials is None:
+            raise RuntimeError("AWS credentials were not found in the default credential chain")
+        frozen = credentials.get_frozen_credentials()
         client = BedrockRuntimeClient(
             config=Config(
                 endpoint_uri=f"https://bedrock-runtime.{self.region}.amazonaws.com",
                 region=self.region,
-                aws_credentials_identity_resolver=EnvironmentCredentialsResolver(),
+                aws_access_key_id=frozen.access_key,
+                aws_secret_access_key=frozen.secret_key,
+                aws_session_token=frozen.token,
+                aws_credentials_identity_resolver=StaticCredentialsResolver(),
             )
         )
         self.stream = await client.invoke_model_with_bidirectional_stream(
@@ -110,6 +122,15 @@ class NovaSession:
             },
         }}})
         self.response_task = asyncio.create_task(self._receive())
+        try:
+            await asyncio.wait_for(self.response_ready.wait(), timeout=20)
+        except TimeoutError as error:
+            raise RuntimeError(
+                "Bedrock stream handshake timed out; verify "
+                "bedrock:InvokeModelWithBidirectionalStream permission and model access"
+            ) from error
+        if self.response_error:
+            raise RuntimeError(f"Bedrock stream failed: {self.response_error}")
 
     async def send_audio(self, encoded_audio: str) -> None:
         base64.b64decode(encoded_audio, validate=True)
@@ -169,10 +190,22 @@ class NovaSession:
 
     async def _receive(self) -> None:
         assert self.stream is not None
-        while self.active:
+        try:
             output = await self.stream.await_output()
-            result = await output[1].receive()
-            if result.value and result.value.bytes_:
-                event = json.loads(result.value.bytes_.decode("utf-8"))
-                await self.event_sink(event)
-
+            receiver = output[1]
+            self.response_ready.set()
+            while self.active:
+                result = await receiver.receive()
+                if result.value and result.value.bytes_:
+                    event = json.loads(result.value.bytes_.decode("utf-8"))
+                    await self.event_sink(event)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            handshake_complete = self.response_ready.is_set()
+            self.response_error = error
+            self.response_ready.set()
+            if handshake_complete:
+                await self.event_sink({
+                    "event": {"bridgeError": {"message": str(error)}}
+                })
