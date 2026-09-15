@@ -46,3 +46,17 @@ AWS_PROFILE=sts-poc make nova-smoke WAV=/absolute/path/sample-pt-br.wav
 The test opens a live Bedrock session and therefore incurs normal Bedrock
 usage charges. It succeeds only after receiving audio output.
 
+## Troubleshooting IAM
+
+If the bridge reports a handshake timeout, verify the effective permission for
+the exact identity returned by `aws sts get-caller-identity`. The identity must
+be allowed to call `bedrock:InvokeModelWithBidirectionalStream` against:
+
+```text
+arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0
+```
+
+An `implicitDeny` result means that `iam-policy.json` has not been attached to
+the active user or role. Attaching or changing IAM policies is intentionally a
+manual account-administration step; the repository never mutates account
+permissions from a local test.

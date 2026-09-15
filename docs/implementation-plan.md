@@ -30,6 +30,17 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 9. **POC release (`stage/08-poc-release`, `v1.0.0-poc`):** PT-BR scenarios,
    latency benchmark, device validation, setup guide, and demo script.
 
+## Current implementation status
+
+- Bootstrap is merged and tagged as `v0.1.0`.
+- The former Qwen/RunPod stage was renamed to `stage/01-aws-nova`; its obsolete
+  deployment artifacts were removed while preserving the incremental history.
+- The Nova bridge, AWS policy, PT-BR configuration, unit tests, and live smoke
+  harness are implemented.
+- Stage 1 remains unmerged until the active AWS identity is granted
+  `bedrock:InvokeModelWithBidirectionalStream` and the live smoke test receives
+  audio from Nova 2 Sonic.
+
 ## Acceptance targets
 
 - Native, continuous speech-to-speech conversation in PT-BR.
@@ -37,4 +48,3 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 - Playback interruption in at most 300 ms.
 - At least 95% successful notes operations and no duplicate mutations.
 - macOS 27 and iOS 27 builds from the same SwiftUI project.
-
