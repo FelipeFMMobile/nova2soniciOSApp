@@ -23,9 +23,21 @@ async def run(url: str, wav_path: str) -> None:
             "voiceId": "carolina",
             "systemPrompt": "Responda sempre em português brasileiro de forma breve.",
         }))
-        ready = json.loads(await asyncio.wait_for(socket.recv(), timeout=30))
-        if ready.get("type") != "session.ready":
-            raise RuntimeError(ready)
+        startup_events: list[str] = []
+        while True:
+            ready = json.loads(await asyncio.wait_for(socket.recv(), timeout=30))
+            if ready.get("type") == "session.ready":
+                break
+            if ready.get("type") == "error":
+                raise RuntimeError(ready.get("message"))
+            payload = ready.get("payload", {}).get("event", {})
+            if ready.get("type") == "nova.event" and payload:
+                startup_events.extend(payload.keys())
+                continue
+            raise RuntimeError(
+                f"unexpected event before session.ready: {ready}; "
+                f"startup events: {startup_events}"
+            )
 
         # Nova expects roughly 32 ms of real-time audio per frame. At 16 kHz,
         # mono PCM16, that is 512 samples / 1024 bytes.
