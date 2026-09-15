@@ -3,6 +3,11 @@ set -euo pipefail
 
 : "${VLLM_API_KEY:?VLLM_API_KEY must be set}"
 
+if [[ ${#VLLM_API_KEY} -lt 24 ]]; then
+  echo "VLLM_API_KEY must contain at least 24 characters" >&2
+  exit 64
+fi
+
 QWEN_MODEL="${QWEN_MODEL:-Qwen/Qwen3-Omni-30B-A3B-Instruct}"
 QWEN_MODEL_REVISION="${QWEN_MODEL_REVISION:-26291f7}"
 MODEL_CACHE="${MODEL_CACHE:-/workspace/models}"
@@ -19,4 +24,3 @@ exec vllm serve "${QWEN_MODEL}" \
   --download-dir "${MODEL_CACHE}" \
   --max-model-len "${MAX_MODEL_LEN}" \
   --trust-remote-code
-
