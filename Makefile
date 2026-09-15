@@ -1,7 +1,7 @@
 SHELL := /bin/zsh
 GOCACHE ?= /private/tmp/sts-go-cache
 
-.PHONY: build test race gateway mcp fmt check qwen-config qwen-smoke
+.PHONY: build test race gateway mcp fmt check nova-install nova-bridge nova-smoke
 
 build:
 	env GOCACHE=$(GOCACHE) go build ./...
@@ -23,8 +23,12 @@ fmt:
 
 check: build test race
 
-qwen-config:
-	docker compose -f deploy/runpod/compose.yaml config --quiet
+nova-install:
+	python3.12 -m venv services/nova-bridge/.venv
+	services/nova-bridge/.venv/bin/pip install -r services/nova-bridge/requirements.txt
 
-qwen-smoke:
-	python3 tests/e2e/qwen_realtime_smoke.py "$(WAV)"
+nova-bridge:
+	PYTHONPATH=services/nova-bridge services/nova-bridge/.venv/bin/python -m nova_bridge.server
+
+nova-smoke:
+	services/nova-bridge/.venv/bin/python tests/e2e/nova_realtime_smoke.py "$(WAV)"

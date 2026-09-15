@@ -22,7 +22,9 @@ xcuserdata/
 *.pcm
 *.caf
 /models/
-deploy/runpod/*.local.json
+.venv/
+__pycache__/
+*.pyc
 
 # macOS and editors
 .DS_Store
