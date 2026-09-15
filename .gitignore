@@ -1,0 +1,30 @@
+# Go
+/bin/
+/coverage/
+*.test
+*.out
+
+# Apple / Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.build/
+
+# Runtime data and secrets
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+*.db
+*.wav
+*.pcm
+*.caf
+/models/
+
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+
