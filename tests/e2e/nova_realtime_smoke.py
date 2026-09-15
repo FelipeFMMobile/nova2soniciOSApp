@@ -7,11 +7,12 @@ import base64
 import json
 import os
 import wave
+from pathlib import Path
 
 import websockets
 
 
-async def run(url: str, wav_path: str) -> None:
+async def run(url: str, wav_path: str, output_path: str) -> None:
     with wave.open(wav_path, "rb") as source:
         if (source.getnchannels(), source.getsampwidth(), source.getframerate()) != (1, 2, 16000):
             raise SystemExit("input must be mono PCM16 at 16 kHz")
@@ -53,9 +54,10 @@ async def run(url: str, wav_path: str) -> None:
             }))
             await asyncio.sleep(0.032)
 
-        audio_bytes = 0
+        output_audio = bytearray()
+        audio_finished = False
         received_events: list[str] = []
-        while audio_bytes == 0:
+        while not audio_finished:
             try:
                 message = json.loads(await asyncio.wait_for(socket.recv(), timeout=60))
             except TimeoutError as error:
@@ -69,17 +71,36 @@ async def run(url: str, wav_path: str) -> None:
             if "bridgeError" in payload:
                 raise RuntimeError(payload["bridgeError"]["message"])
             if "audioOutput" in payload:
-                audio_bytes += len(base64.b64decode(payload["audioOutput"]["content"]))
+                output_audio.extend(base64.b64decode(payload["audioOutput"]["content"]))
+            if payload.get("contentEnd", {}).get("type") == "AUDIO":
+                audio_finished = True
+            if "completionEnd" in payload and not output_audio:
+                raise RuntimeError(
+                    f"Nova completed without audio; received events: {received_events}"
+                )
+
         await socket.send(json.dumps({"type": "session.stop"}))
-        print(json.dumps({"audioBytes": audio_bytes}))
+        destination = Path(output_path).expanduser().resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(destination), "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(24000)
+            output.writeframes(output_audio)
+        print(json.dumps({
+            "audioBytes": len(output_audio),
+            "durationSeconds": round(len(output_audio) / (24000 * 2), 3),
+            "output": str(destination),
+        }))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("wav")
     parser.add_argument("--url", default=os.getenv("STS_NOVA_BRIDGE_URL", "ws://127.0.0.1:8091"))
+    parser.add_argument("--output", default="/private/tmp/sts-nova-response.wav")
     args = parser.parse_args()
-    asyncio.run(run(args.url, args.wav))
+    asyncio.run(run(args.url, args.wav, args.output))
 
 
 if __name__ == "__main__":
