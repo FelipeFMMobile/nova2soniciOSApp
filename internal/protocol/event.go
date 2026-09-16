@@ -59,6 +59,7 @@ type Event struct {
 	SampleRate int      `json:"sampleRate,omitempty"`
 	Text       string   `json:"text,omitempty"`
 	Role       string   `json:"role,omitempty"`
+	Stage      string   `json:"stage,omitempty"`
 	Code       string   `json:"code,omitempty"`
 	Message    string   `json:"message,omitempty"`
 	Metrics    *Metrics `json:"metrics,omitempty"`
@@ -104,7 +105,7 @@ func DecodeClient(data []byte) (Event, error) {
 	if event.Type != SessionStart && event.SessionID == "" {
 		return Event{}, fmt.Errorf("sessionId is required")
 	}
-	if event.Text != "" || event.State != "" || event.Role != "" || event.Code != "" || event.Message != "" || event.Metrics != nil || event.Tool != nil {
+	if event.Text != "" || event.State != "" || event.Role != "" || event.Stage != "" || event.Code != "" || event.Message != "" || event.Metrics != nil || event.Tool != nil {
 		return Event{}, fmt.Errorf("server fields are not allowed in client events")
 	}
 	if event.Type != AudioAppend && (event.Audio != "" || event.SampleRate != 0) {

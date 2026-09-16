@@ -37,7 +37,7 @@ async def handle(connection: ServerConnection) -> None:
             system_prompt=start.get("systemPrompt", DEFAULT_PROMPT),
             event_sink=emit,
         )
-        await session.start(start.get("tools"))
+        await session.start(start.get("tools"), start.get("history"))
         await connection.send(json.dumps({"type": "session.ready"}))
 
         async for raw in connection:
@@ -70,4 +70,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
