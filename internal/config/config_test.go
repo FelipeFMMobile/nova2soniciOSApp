@@ -72,3 +72,21 @@ func TestNovaSessionAgeCannotReachBedrockHardLimit(t *testing.T) {
 		t.Fatal("unsafe renewal deadline accepted")
 	}
 }
+
+func TestMCPConfigurationIsNotShellCode(t *testing.T) {
+	t.Setenv("STS_MCP_COMMAND", "/absolute/bin/mcp-notes")
+	t.Setenv("STS_MCP_ARGS", `["-db","a path/sts.sqlite"]`)
+	cfg, err := Load()
+	if err != nil || len(cfg.MCPArgs) != 2 || cfg.MCPArgs[1] != "a path/sts.sqlite" {
+		t.Fatal(cfg, err)
+	}
+	t.Setenv("STS_MCP_ARGS", "-db /tmp/a; echo secret")
+	if _, err = Load(); err == nil {
+		t.Fatal("shell command accepted as args")
+	}
+	t.Setenv("STS_MCP_ARGS", "[]")
+	t.Setenv("STS_MCP_COMMAND", "mcp-notes")
+	if _, err = Load(); err == nil {
+		t.Fatal("relative executable accepted")
+	}
+}
