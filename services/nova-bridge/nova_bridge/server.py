@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from http import HTTPStatus
 import json
 import logging
 import os
@@ -12,6 +13,15 @@ from .session import NovaSession
 
 
 LOG = logging.getLogger("nova-bridge")
+
+
+def health_response(connection: ServerConnection, request: Any) -> Any:
+    """Local readiness probe, without creating a Bedrock conversation."""
+    if request.path == "/healthz":
+        return connection.respond(HTTPStatus.OK, "ok\n")
+    return None
+
+
 DEFAULT_PROMPT = (
     "Você é um assistente de voz prestativo. Converse sempre em português "
     "brasileiro, responda de forma clara e breve e nunca anuncie que uma ação "
@@ -71,7 +81,7 @@ async def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     host = os.getenv("NOVA_BRIDGE_HOST", "127.0.0.1")
     port = int(os.getenv("NOVA_BRIDGE_PORT", "8091"))
-    async with serve(handle, host, port, max_size=1024 * 1024):
+    async with serve(handle, host, port, max_size=1024 * 1024, process_request=health_response):
         LOG.info("Nova bridge listening on ws://%s:%d", host, port)
         await asyncio.Future()
 
