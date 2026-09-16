@@ -53,17 +53,25 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
   explicit cancellation, tool-event mapping, and timed history-based renewal.
   Two real AWS sessions passed (normal response and native speech interruption).
   Session renewal was validated with compressed timers against a mock bridge,
-  not a real eight-minute soak. Stage 3 awaits user acceptance before merge/tag
-  `v0.4.0`; Apple microphone/playback validation remains in Stages 4–5.
+  not a real eight-minute soak. The user authorized implementation of the next
+  stage; Stage 3 passed its gate, was merged `--no-ff`, and tagged `v0.4.0`.
+  Apple microphone/playback validation remains in Stages 4–5.
 - The user requested original Stage 6 before either Apple app. Stage identifiers
   and branch names remain stable; future tags follow execution order. No existing
-  history or tags are rewritten. MCP implementation has not started yet.
+  history or tags are rewritten.
+- Stage 6 is implemented on `stage/06-mcp-notes`: real stdio MCP discovery and
+  calls, SQLite notes/effect ledger/session audit, native Nova tool configuration
+  and result transport, argument validation, host confirmation, bounded async
+  execution, and terminal follow-ups/event capture. Live AWS create, retrieval
+  in a fresh conversation, durable retry, refusal, confirmed deletion and empty
+  post-delete query passed. See [MCP integration](mcp-integration.md).
+  Stage 6 awaits user acceptance before merge/tag `v0.5.0`.
 
 ## Next priority: MCP before Apple apps
 
 Execution order is **0 → 1 → 2 → 3 → 6 → 4 → 5 → 7 → 8**.
-Close Stage 3 with its acceptance/test/merge gate before creating the MCP branch
-from updated `main`. This reorder does not itself merge or tag Stage 3.
+Stage 3's acceptance/test/merge gate is closed. The MCP branch was created from
+updated `main`; neither Apple branch starts before MCP acceptance and merge.
 
 ### Integration boundary
 
@@ -75,8 +83,8 @@ then the Python transport returns the correlated `toolResult` to the same Nova
 conversation so it can speak from the actual result. The Python bridge remains
 transport-only; business logic, permissions and persistence stay in Go.
 
-Stage 3 only maps tool events: it does not yet advertise MCP tools, execute them,
-or return their results. `cmd/mcp-notes` is currently a bootstrap placeholder.
+Stage 3 alone only mapped tool events. Stage 6 now advertises MCP tools,
+executes them, and returns results; `cmd/mcp-notes` is now a working stdio server.
 
 ### Incremental tasks and commits
 

@@ -3,7 +3,7 @@
 ## Runtime topology
 
 ```text
-iOS/macOS app
+Terminal client (Apple apps are later stages)
     | local WebSocket (versioned JSON events + PCM16/base64)
     v
 Go gateway on the Mac
@@ -45,6 +45,10 @@ available for local tests.
 
 Exposes create, list, and delete operations. The orchestrator validates every
 call, makes creation idempotent, and requires confirmation before deletion.
+Stage 6 implements the pinned MCP stdio tools subset: discovery at session
+startup, native Nova tool configuration, host-side calls and correlated results.
+The bridge only transports tools/audio; Go owns permissions and execution.
+See [MCP integration](mcp-integration.md) for the validated flow and limitations.
 
 ## Audio contract
 

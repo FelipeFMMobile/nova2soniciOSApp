@@ -49,8 +49,27 @@ ID; turn events carry turn ID. Audio output sequence starts at 1 for each turn.
 Transcripts have no audio sequence. The fake transcript is explicitly labeled
 as simulated; fake output is 0.8 seconds of tone at 24 kHz.
 
-`tool.started`, `tool.result`, and `tool.confirmation` are reserved server
-events in the Go contract for Stage 6; tools are not executable in Stage 2.
+`tool.started`, `tool.result`, and `tool.confirmation` are implemented for Nova
+with a configured MCP server in Stage 6; fake sessions do not execute tools.
+Tool payloads carry operationId/name/arguments or result. A native model
+tool-use ID identifies the operation; the gateway maps Nova names to MCP names
+in results. See [MCP integration](mcp-integration.md) for limits and approval.
+
+`session.start` accepts optional `requestId` (a valid ASCII ID). Reuse it for
+retries of the same logical request; use a new one for a deliberate mutation.
+This POC allows one note creation and one deletion per request ID. Without it,
+the server uses the fresh session ID, so cross-connection retry is not deduped.
+
+Trusted clients may send a pending confirmation without executing the tool:
+
+```json
+{"version":1,"type":"tool.confirm","sessionId":"SERVER_ID","tool":{"operationId":"PENDING_TOOL_ID","approved":true}}
+```
+
+No target, name or arguments may be supplied in that confirmation. Voice
+approval instead requires a subsequent finalized USER phrase, exactly
+“confirmo excluir” for notes. Approval is target-bound and expires in 60 seconds.
+The model must issue the matching tool again to receive its actual result.
 
 ## Cancellation and ordering
 
