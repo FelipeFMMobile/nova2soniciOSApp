@@ -40,3 +40,28 @@ func TestNovaUsesLocalBridgeByDefault(t *testing.T) {
 		t.Fatalf("NovaBridgeURL = %q", cfg.NovaBridgeURL)
 	}
 }
+
+func TestRejectsMalformedLimits(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{{"STS_READ_TIMEOUT", "oops"}, {"STS_WRITE_TIMEOUT", "0s"}, {"STS_IDLE_TIMEOUT", "-1s"}, {"STS_TURN_TIMEOUT", "-5s"}, {"STS_MAX_SESSIONS", "0"}, {"STS_MAX_EVENT_BYTES", "oops"}} {
+		t.Run(tc.key, func(t *testing.T) {
+			t.Setenv(tc.key, tc.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("malformed limit accepted")
+			}
+		})
+	}
+}
+
+func TestNonLoopbackRequiresToken(t *testing.T) {
+	t.Setenv("STS_ENV", "development")
+	t.Setenv("STS_PROVIDER", "fake")
+	t.Setenv("STS_GATEWAY_ADDRESS", "0.0.0.0:8080")
+	t.Setenv("STS_DEVELOPMENT_TOKEN", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("unauthenticated network listener accepted")
+	}
+	t.Setenv("STS_DEVELOPMENT_TOKEN", "test-token")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+}
