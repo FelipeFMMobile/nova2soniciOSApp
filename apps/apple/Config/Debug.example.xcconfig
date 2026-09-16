@@ -1,0 +1,5 @@
+// Copy to Debug.local.xcconfig (ignored). This is NOT an AWS credential.
+STS_GATEWAY_URL = ws:/$()/127.0.0.1:8080/v1/voice
+STS_GATEWAY_TOKEN = local-demo-token
+// For an iPhone: use the Mac LAN address, not 127.0.0.1.
+// STS_GATEWAY_URL = ws:/$()/192.168.1.10:8080/v1/voice
