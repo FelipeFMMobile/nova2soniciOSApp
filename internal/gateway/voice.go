@@ -58,6 +58,7 @@ func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
 	_ = conn.SetReadDeadline(time.Now().Add(s.cfg.ReadTimeout))
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(s.cfg.IdleTimeout)) })
 	go func() {
+		defer cancel()
 		defer close(readDone)
 		defer close(in)
 		for {
@@ -82,6 +83,10 @@ func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
 		event.SessionID = conversation.ID
 		_ = conn.SetWriteDeadline(time.Now().Add(s.cfg.WriteTimeout))
 		return conn.WriteJSON(event)
+	}
+	if s.cfg.Provider == "nova" {
+		s.runNova(ctx, conn, in, conversation.ID, write)
+		return
 	}
 	sendError := func(code, message string) error {
 		s.metrics.Errors.Add(1)

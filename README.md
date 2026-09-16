@@ -42,6 +42,42 @@ a token. Runtime data and secrets are intentionally excluded from Git.
 See [Voice protocol](docs/voice-protocol.md) for endpoints, event examples,
 limits, latency definitions, and the Stage 2 validation results.
 
+## Real Nova 2 Sonic through the gateway (Stage 3)
+
+Use three terminals. The local token is your choice and is unrelated to AWS
+credentials. The Python bridge uses the AWS profile already authorized for
+Bedrock; set `AWS_PROFILE` only if you need a named profile.
+
+Terminal 1 — private Python/Bedrock bridge:
+
+```bash
+make nova-install
+make nova-bridge
+```
+
+Terminal 2 — public Go gateway:
+
+```bash
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+export STS_PROVIDER=nova
+make gateway
+```
+
+Terminal 3 — send an actual PT-BR WAV (mono PCM16, 16 kHz):
+
+```bash
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+make nova-demo WAV=/absolute/path/input-pt-br.wav
+make nova-barge-demo WAV=/absolute/path/input-pt-br.wav BARGE_WAV=/absolute/path/interruption-pt-br.wav
+```
+
+The first command saves the spoken response. The second injects the second
+recording during the first response, requires native Nova interruption, clears
+old output, and saves only the new response. These commands incur Bedrock
+usage charges. Stop the Go gateway and Python bridge with Ctrl+C when finished.
+Recordings are ignored by Git. See [Nova integration](docs/nova-integration.md)
+for session behavior, limitations, and the live validation report.
+
 ## Repository layout
 
 - `apps/apple`: shared SwiftUI application for iOS and macOS.

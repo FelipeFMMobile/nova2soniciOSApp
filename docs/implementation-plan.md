@@ -19,12 +19,13 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 4. **Nova end to end (`stage/03-nova-e2e`, `v0.4.0`):** Go bridge adapter,
    native bidirectional audio, transcript mapping, barge-in, tool event mapping,
    and eight-minute session continuation.
-5. **macOS app (`stage/04-macos-app`, `v0.5.0`):** shared SwiftUI code,
+5. **MCP notes (original Stage 6, `stage/06-mcp-notes`, `v0.5.0`):** SQLite,
+   configurable MCP discovery, create/list/delete tools, idempotency,
+   confirmation, and native Nova tool use, validated through the terminal.
+6. **macOS app (`stage/04-macos-app`, `v0.6.0`):** shared SwiftUI code,
    microphone capture, voice processing, incremental playback, and UI states.
-6. **iOS app (`stage/05-ios-app`, `v0.6.0`):** iPhone target, local network,
+7. **iOS app (`stage/05-ios-app`, `v0.7.0`):** iPhone target, local network,
    audio route/lifecycle handling, Simulator build, and physical-device test.
-7. **MCP notes (`stage/06-mcp-notes`, `v0.7.0`):** SQLite, MCP discovery,
-   create/list/delete tools, idempotency, confirmation, and native Nova tool use.
 8. **Resilience (`stage/07-resilience`, `v0.8.0`):** reconnect, session
    renewal, timeouts, ordering, redaction, and failure tests.
 9. **POC release (`stage/08-poc-release`, `v1.0.0-poc`):** PT-BR scenarios,
@@ -46,6 +47,78 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
   metrics, terminal WAV demo, and concurrency tests. The user confirmed the
   terminal execution and accepted progression to Stage 3. No AWS calls were
   needed for Stage 2.
+- Stage 2 is merged into `main` and tagged `v0.3.0`.
+- Stage 3 is implemented on `stage/03-nova-e2e`: live continuous audio through
+  Go, final/speculative transcripts, native barge-in, stale-frame rejection,
+  explicit cancellation, tool-event mapping, and timed history-based renewal.
+  Two real AWS sessions passed (normal response and native speech interruption).
+  Session renewal was validated with compressed timers against a mock bridge,
+  not a real eight-minute soak. Stage 3 awaits user acceptance before merge/tag
+  `v0.4.0`; Apple microphone/playback validation remains in Stages 4–5.
+- The user requested original Stage 6 before either Apple app. Stage identifiers
+  and branch names remain stable; future tags follow execution order. No existing
+  history or tags are rewritten. MCP implementation has not started yet.
+
+## Next priority: MCP before Apple apps
+
+Execution order is **0 → 1 → 2 → 3 → 6 → 4 → 5 → 7 → 8**.
+Close Stage 3 with its acceptance/test/merge gate before creating the MCP branch
+from updated `main`. This reorder does not itself merge or tag Stage 3.
+
+### Integration boundary
+
+The model does not connect directly to an MCP server. The Go orchestrator
+initializes a configured local MCP server over stdio, discovers `tools/list`,
+and converts allowed tool schemas into Nova `promptStart.toolConfiguration`.
+Nova chooses whether to emit `toolUse`; Go validates and executes `tools/call`,
+then the Python transport returns the correlated `toolResult` to the same Nova
+conversation so it can speak from the actual result. The Python bridge remains
+transport-only; business logic, permissions and persistence stay in Go.
+
+Stage 3 only maps tool events: it does not yet advertise MCP tools, execute them,
+or return their results. `cmd/mcp-notes` is currently a bootstrap placeholder.
+
+### Incremental tasks and commits
+
+1. `feat(storage): add sqlite migrations and notes repositories`
+   - Persist notes and operation lifecycle; unique idempotency keys.
+2. `feat(mcp): implement notes server and configurable stdio client`
+   - MCP initialization, discovery and calls; bounded payloads, timeouts and
+     clean subprocess shutdown. Use a configured allowlist, never a model-supplied
+     command. Start with create/list/delete; make the client reusable for other
+     configured MCP servers without claiming universal compatibility.
+3. `feat(nova): advertise discovered tools and return native tool results`
+   - Map MCP names to Nova-compatible names, preserve JSON schemas and tool-use
+     IDs, serialize writes with audio, and re-advertise tools on session renewal.
+4. `feat(orchestrator): validate tool calls and enforce safe mutations`
+   - Validate names/arguments; deduplicate within session and across retries;
+     require explicit confirmation before deletion. A pending confirmation is
+     not success. Return controlled failures to Nova for every failed tool call.
+5. `feat(client): display tool lifecycle and confirmation in terminal`
+   - Expose started/result/error/confirmation events without requiring SwiftUI.
+     Apple tool UI moves to the later app stages. Preserve voice barge-in while
+     tools run; an interrupted response must not silently retry a mutation.
+6. `test(mcp): verify discovery decisions actions and spoken results`
+   - Unit/integration tests first, then real PT-BR Nova voice scenarios with WAV
+     output and local audit evidence. Live calls incur normal Bedrock charges.
+7. `docs(mcp): add setup demo and validation report`
+   - Document plugging a configured server, tool permissions and observed limits.
+
+### Acceptance gate
+
+- Model autonomously selects tools with automatic tool choice for requests
+  requiring external information; ordinary conversation needs no tool call.
+- Create a note by voice, query it in a later session, and speak its stored
+  information. Use a unique test value to distinguish retrieval from guesswork.
+- Delete only after explicit confirmation; refusal leaves the note intact.
+- Correlate ASR, tool name/ID, MCP result, SQLite state and final spoken response;
+  never report success before the tool result, or fabricate data on tool failure.
+- Retry does not duplicate a note; malformed arguments, unknown tools, timeout,
+  server loss and interruption return controlled outcomes.
+- Go tests with race detector and bridge tests pass; real AWS results are
+  documented separately from mocks. Merge/tag only after user acceptance.
+
+Reference: [AWS Nova 2 Sonic tool configuration](https://docs.aws.amazon.com/nova/latest/nova2-userguide/sonic-tool-configuration.html).
 
 ## Acceptance targets
 

@@ -27,18 +27,48 @@ type result struct {
 func main() {
 	url := flag.String("url", "ws://127.0.0.1:8080/v1/voice", "gateway WebSocket URL")
 	wav := flag.String("wav", "", "optional mono PCM16 16 kHz input WAV (maximum 30 seconds)")
-	output := flag.String("output", "/private/tmp/sts-fake-response.wav", "output WAV path")
+	output := flag.String("output", "", "output WAV path (default /private/tmp/sts-PROVIDER-response.wav)")
+	selected := flag.String("provider", "fake", "fake or nova; nova requires an input WAV")
+	bargeWAV := flag.String("barge-wav", "", "Nova-only: send a second WAV during the first response to test native barge-in")
 	cancelAfter := flag.Duration("cancel-after", 0, "cancel the simulated response after this duration")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	if err := run(ctx, *url, *wav, *output, *cancelAfter); err != nil {
+	if *output == "" {
+		*output = "/private/tmp/sts-" + *selected + "-response.wav"
+	}
+	if err := runProvider(ctx, *url, *wav, *output, *cancelAfter, *selected, *bargeWAV); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.Duration) error {
+	return runProvider(ctx, url, wavPath, outputPath, cancelAfter, "fake")
+}
+
+func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.Duration, selected string, bargePaths ...string) error {
+	if selected != "fake" && selected != "nova" {
+		return fmt.Errorf("provider must be fake or nova")
+	}
+	if selected == "nova" && wavPath == "" {
+		return fmt.Errorf("Nova requires -wav with PT-BR mono PCM16 at 16 kHz")
+	}
+	var bargeAudio []byte
+	if len(bargePaths) > 0 && bargePaths[0] != "" {
+		if selected != "nova" || cancelAfter != 0 {
+			return fmt.Errorf("barge-wav requires Nova and cannot be combined with cancel-after")
+		}
+		file, err := os.Open(bargePaths[0])
+		if err != nil {
+			return err
+		}
+		bargeAudio, err = audio.ReadPCM16WAV(file, 16000, session.MaxTurnBytes)
+		file.Close()
+		if err != nil {
+			return err
+		}
+	}
 	if cancelAfter < 0 {
 		return fmt.Errorf("cancel-after must not be negative")
 	}
@@ -70,10 +100,10 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 		_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		return c.WriteJSON(e)
 	}
-	if err := write(protocol.Event{Type: protocol.SessionStart, Provider: "fake"}); err != nil {
+	if err := write(protocol.Event{Type: protocol.SessionStart, Provider: selected}); err != nil {
 		return err
 	}
-	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = c.SetReadDeadline(time.Now().Add(30 * time.Second))
 	var ready protocol.Event
 	if err := c.ReadJSON(&ready); err != nil {
 		return err
@@ -92,6 +122,15 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 		sequence++
 		if err := write(protocol.Event{Type: protocol.AudioAppend, SessionID: sid, TurnID: tid, Sequence: sequence, SampleRate: 16000, Audio: base64.StdEncoding.EncodeToString(pcm[offset:end])}); err != nil {
 			return err
+		}
+		if selected == "nova" {
+			timer := time.NewTimer(32 * time.Millisecond)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			}
 		}
 	}
 	if err := write(protocol.Event{Type: protocol.TurnCommit, SessionID: sid, TurnID: tid}); err != nil {
@@ -118,23 +157,51 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 	}()
 	defer func() { readCancel(); c.Close(); <-done }()
 	var cancellation <-chan time.Time
-	if cancelAfter > 0 {
+	var nativeCancellation *time.Timer
+	defer func() {
+		if nativeCancellation != nil {
+			nativeCancellation.Stop()
+		}
+	}()
+	if cancelAfter > 0 && selected == "fake" {
 		timer := time.NewTimer(cancelAfter)
 		defer timer.Stop()
 		cancellation = timer.C
 	}
-	deadline := time.NewTimer(10 * time.Second)
+	deadline := time.NewTimer(45 * time.Second)
 	defer deadline.Stop()
 	var response []byte
 	var audioSequence uint64
 	sampleRate := 0
 	stopping := false
+	outputTurnID := tid
+	bargeStarted, bargeInterrupted := false, false
+	bargeOffset := 0
+	var silence <-chan time.Time
+	if selected == "nova" {
+		ticker := time.NewTicker(32 * time.Millisecond)
+		defer ticker.Stop()
+		silence = ticker.C
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
 			return fmt.Errorf("voice demo timed out")
+		case <-silence:
+			if !stopping {
+				sequence++
+				frame := make([]byte, 1024)
+				if bargeStarted && bargeOffset < len(bargeAudio) {
+					end := min(bargeOffset+1024, len(bargeAudio))
+					copy(frame, bargeAudio[bargeOffset:end])
+					bargeOffset = end
+				}
+				if err := write(protocol.Event{Type: protocol.AudioAppend, SessionID: sid, TurnID: tid, Sequence: sequence, SampleRate: 16000, Audio: base64.StdEncoding.EncodeToString(frame)}); err != nil {
+					return err
+				}
+			}
 		case <-cancellation:
 			cancellation = nil
 			if !stopping {
@@ -151,6 +218,13 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 				return fmt.Errorf("protocol/session mismatch")
 			}
 			switch e.Type {
+			case protocol.TurnStarted:
+				if selected == "nova" && e.TurnID != outputTurnID {
+					outputTurnID = e.TurnID
+					response = nil
+					sampleRate = 0
+					audioSequence = 0
+				}
 			case protocol.Error:
 				return fmt.Errorf("%s: %s", e.Code, e.Message)
 			case protocol.Transcript:
@@ -158,7 +232,15 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 			case protocol.SessionState:
 				fmt.Printf("state=%s\n", e.State)
 			case protocol.AudioOutput:
-				if stopping || e.TurnID != tid || e.Sequence != audioSequence+1 {
+				if len(bargeAudio) > 0 && !bargeStarted {
+					bargeStarted = true
+					fmt.Println("sending second speech through the same live microphone stream")
+				}
+				if selected == "nova" && cancelAfter > 0 && nativeCancellation == nil {
+					nativeCancellation = time.NewTimer(cancelAfter)
+					cancellation = nativeCancellation.C
+				}
+				if stopping || e.TurnID != outputTurnID || e.Sequence != audioSequence+1 {
 					return fmt.Errorf("stale or out-of-order audio")
 				}
 				if sampleRate != 0 && sampleRate != e.SampleRate {
@@ -175,6 +257,9 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 				audioSequence++
 				response = append(response, decoded...)
 			case protocol.TurnCompleted:
+				if len(bargeAudio) > 0 && !bargeInterrupted {
+					return fmt.Errorf("Nova completed before native barge-in; interruption scenario did not pass")
+				}
 				file, err := os.Create(outputPath)
 				if err != nil {
 					return err
@@ -196,6 +281,13 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 				}
 			case protocol.TurnInterrupted:
 				response = nil
+				sampleRate = 0
+				audioSequence = 0
+				if len(bargeAudio) > 0 && bargeStarted {
+					bargeInterrupted = true
+					fmt.Println("native barge-in confirmed; old audio discarded")
+					continue
+				}
 				stopping = true
 				fmt.Println("turn interrupted; output discarded")
 				if err := write(protocol.Event{Type: protocol.SessionStop, SessionID: sid}); err != nil {

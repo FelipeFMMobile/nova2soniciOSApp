@@ -47,7 +47,17 @@ class NovaSession:
         self.response_error: Exception | None = None
         self.active = False
 
-    async def start(self, tools: list[dict[str, Any]] | None = None) -> None:
+    async def start(
+        self,
+        tools: list[dict[str, Any]] | None = None,
+        history: list[dict[str, str]] | None = None,
+    ) -> None:
+        history = history or []
+        if len(history) > 32 or sum(len(item.get("content", "")) for item in history) > 65536:
+            raise ValueError("conversation history exceeds limits")
+        for item in history:
+            if item.get("role") not in ("USER", "ASSISTANT") or not isinstance(item.get("content"), str) or len(item["content"]) > 8192:
+                raise ValueError("invalid conversation history")
         profile = os.getenv("AWS_PROFILE")
         credentials = boto3.Session(profile_name=profile).get_credentials()
         if credentials is None:
@@ -106,6 +116,25 @@ class NovaSession:
             "promptName": self.prompt_name,
             "contentName": self.system_content_name,
         }}})
+        for item in history:
+            content_name = str(uuid.uuid4())
+            await self._send({"event": {"contentStart": {
+                "promptName": self.prompt_name,
+                "contentName": content_name,
+                "type": "TEXT",
+                "interactive": False,
+                "role": item["role"],
+                "textInputConfiguration": {"mediaType": "text/plain"},
+            }}})
+            await self._send({"event": {"textInput": {
+                "promptName": self.prompt_name,
+                "contentName": content_name,
+                "content": item["content"],
+            }}})
+            await self._send({"event": {"contentEnd": {
+                "promptName": self.prompt_name,
+                "contentName": content_name,
+            }}})
         await self._send({"event": {"contentStart": {
             "promptName": self.prompt_name,
             "contentName": self.audio_content_name,
@@ -176,7 +205,11 @@ class NovaSession:
         await self._send({"event": {"sessionEnd": {}}})
         await self.stream.input_stream.close()
         if self.response_task:
-            self.response_task.cancel()
+            # Drain the in-flight Bedrock read after sessionEnd. Cancelling it
+            # immediately can trigger a cancelled-Future callback in AWS CRT.
+            _, pending = await asyncio.wait({self.response_task}, timeout=2)
+            if pending:
+                self.response_task.cancel()
             await asyncio.gather(self.response_task, return_exceptions=True)
 
     async def _send(self, event: dict[str, Any]) -> None:
@@ -196,6 +229,8 @@ class NovaSession:
             self.response_ready.set()
             while self.active:
                 result = await receiver.receive()
+                if not self.active:
+                    return
                 if result.value and result.value.bytes_:
                     event = json.loads(result.value.bytes_.decode("utf-8"))
                     await self.event_sink(event)

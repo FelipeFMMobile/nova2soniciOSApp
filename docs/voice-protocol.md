@@ -1,7 +1,9 @@
 # Voice gateway — protocol v1
 
-Stage 2 implements local transport and a deterministic fake provider. It does
-not invoke Nova, execute MCP tools, capture a microphone, or synthesize speech.
+Stage 2 introduced local transport and a deterministic fake provider. Stage 3
+adds the Nova adapter; see [Nova integration](nova-integration.md). The fake
+provider still does not invoke Nova, execute MCP tools, capture a microphone,
+or synthesize speech.
 
 ## Endpoints
 
@@ -16,9 +18,11 @@ not invoke Nova, execute MCP tools, capture a microphone, or synthesize speech.
 never in a query string. Browser WebSockets must have the same host in their
 Origin header; native clients may omit Origin. There is no broad CORS bypass.
 
-The selected provider is `fake`. `nova` appears as unavailable until Stage 3;
-starting the gateway with `STS_PROVIDER=nova` fails rather than silently using
-fake output. The Python bridge from Stage 1 remains independently usable.
+The default provider is `fake`. Set `STS_PROVIDER=nova` for the real Stage 3
+adapter. Adapter availability in `/v1/providers` is not an AWS health/access
+probe; `session.ready` is emitted only after the private bridge handshake.
+Provider failure never silently falls back to fake output. The Python bridge
+from Stage 1 remains independently usable.
 
 ## Lifecycle
 
@@ -62,9 +66,13 @@ after `turn.interrupted`. Reusing old turn IDs, duplicate/gapped input sequences
 or mixing session IDs generates a recoverable error without changing the
 valid conversation state. IDs use 1–128 ASCII letters, digits, `_` or `-`.
 
-The fake adapter is turn-based and uses manual `turn.commit`. Stage 3 will
-extend the adapter boundary for native continuous Nova input and model VAD;
-the fake turn boundary is not a claim of Nova full-duplex integration.
+The fake adapter is turn-based and uses manual `turn.commit`. Nova forwards
+each chunk immediately and uses model VAD. For Nova, `turn.commit` is a timing
+marker, not an inference trigger. A continuous microphone container can keep
+its input ID/sequence while Nova generates fresh output turn IDs after native
+interruption. Track server `turn.started` events for output playback. Nova
+transcripts declare `stage` (SPECULATIVE or FINAL); only FINAL spoken text is
+used in renewal history. `session.renewed` signals private-session replacement.
 
 ## Limits and failure behavior
 

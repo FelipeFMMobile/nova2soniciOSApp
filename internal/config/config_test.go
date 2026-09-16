@@ -65,3 +65,10 @@ func TestNonLoopbackRequiresToken(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNovaSessionAgeCannotReachBedrockHardLimit(t *testing.T) {
+	t.Setenv("STS_NOVA_MAX_SESSION_AGE", "8m")
+	if _, err := Load(); err == nil {
+		t.Fatal("unsafe renewal deadline accepted")
+	}
+}

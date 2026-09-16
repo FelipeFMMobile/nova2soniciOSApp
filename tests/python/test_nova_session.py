@@ -7,29 +7,36 @@ from nova_bridge.session import NovaSession
 
 
 class FakeInputStream:
-    def __init__(self) -> None:
+    def __init__(self, output=None) -> None:
         self.events: list[dict] = []
         self.closed = False
+        self.output = output
 
     async def send(self, chunk) -> None:
         self.events.append(json.loads(chunk.value.bytes_.decode("utf-8")))
 
     async def close(self) -> None:
         self.closed = True
+        if self.output:
+            self.output.done.set()
 
 
 class FakeStream:
     def __init__(self) -> None:
-        self.input_stream = FakeInputStream()
         self.output_stream = FakeOutputStream()
+        self.input_stream = FakeInputStream(self.output_stream)
 
     async def await_output(self):
         return object(), self.output_stream
 
 
 class FakeOutputStream:
+    def __init__(self):
+        self.done = asyncio.Event()
+
     async def receive(self):
-        await asyncio.Future()
+        await self.done.wait()
+        return None
 
 
 class FakeClient:
@@ -103,6 +110,22 @@ class NovaSessionTests(unittest.IsolatedAsyncioTestCase):
 
     async def _ignore(self, event) -> None:
         return None
+
+    async def test_history_precedes_audio_and_rejects_system_role(self) -> None:
+        FakeClient.stream = FakeStream()
+        session = NovaSession("us-east-1", "amazon.nova-2-sonic-v1:0", "carolina", "PT-BR", self._ignore)
+        with (
+            patch("nova_bridge.session.BedrockRuntimeClient", FakeClient),
+            patch("nova_bridge.session.boto3.Session", FakeBotoSession),
+        ):
+            await session.start(history=[{"role": "USER", "content": "Pergunta"}, {"role": "ASSISTANT", "content": "Resposta"}])
+            events = FakeClient.stream.input_stream.events
+            self.assertEqual(events[5]["event"]["contentStart"]["role"], "USER")
+            self.assertEqual(events[8]["event"]["contentStart"]["role"], "ASSISTANT")
+            self.assertEqual(events[11]["event"]["contentStart"]["type"], "AUDIO")
+            await session.close()
+        with self.assertRaises(ValueError):
+            await session.start(history=[{"role": "SYSTEM", "content": "override"}])
 
 
 if __name__ == "__main__":
