@@ -2,8 +2,10 @@
 
 Implementação na branch `codex/multi-mcp-agenda`, a partir da main após Notes
 v0.5.0. Esta etapa preserva Notes e não implementa macOS/iOS, contas externas,
-Google Calendar, recursos/credenciais AWS ou IAM. Aceite e validação Nova real completa
-continuam pendentes (a consulta simultânea foi validada; ver relatório abaixo); merge, tag e push dependem do usuário.
+Google Calendar, recursos/credenciais AWS ou IAM. A consulta simultânea foi
+validada e o usuário aceitou a etapa, autorizando
+merge no-ff e tag anotada v0.6.0. Os demais cenários AWS permanecem limites
+documentados. Push depende de autorização própria.
 
 Validação local em 16/09/2026: `make check` (build, todos os testes Go,
 race detector e vet) e quatro testes Python da ponte passaram. Os dez cenários
@@ -279,4 +281,5 @@ criação, cancelamento, ambiguidade, falha, renovação ou custo/latência gera
 As duas sessões geram cobrança normal Bedrock; custo monetário exato não foi
 apurado (usage/billing não capturados). Serviços da demo foram encerrados.
 Nenhum recurso AWS/IAM/credencial/agenda externa foi criado/alterado.
-Merge/tag/push continuam aguardando aceite do usuário.
+O usuário aceitou a etapa e autorizou merge no-ff e tag anotada `v0.6.0`.
+Push não foi autorizado nesta task.

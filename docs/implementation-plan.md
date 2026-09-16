@@ -22,15 +22,15 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 5. **MCP notes (original Stage 6, `stage/06-mcp-notes`, `v0.5.0`):** SQLite,
    configurable MCP discovery, create/list/delete tools, idempotency,
    confirmation, and native Nova tool use, validated through the terminal.
-6. **Two MCPs + local Agenda (`codex/multi-mcp-agenda`, additional stage 6B):**
+6. **Two MCPs + local Agenda (`codex/multi-mcp-agenda`, `v0.6.0`, additional stage 6B):**
    simultaneous Notes/Agenda stdio servers, host policies/routing, SQLite agenda,
-   isolated failures, terminal evidence and local tests before Apple apps. Release
-   tag is decided only after acceptance; subsequent unissued tags may shift.
-7. **macOS app (`stage/04-macos-app`, `v0.6.0`):** shared SwiftUI code,
+   isolated failures, terminal evidence and local tests before Apple apps.
+   Accepted by the user after the real two-MCP query demo; release `v0.6.0`.
+7. **macOS app (`stage/04-macos-app`, `v0.7.0`):** shared SwiftUI code,
    microphone capture, voice processing, incremental playback, and UI states.
-8. **iOS app (`stage/05-ios-app`, `v0.7.0`):** iPhone target, local network,
+8. **iOS app (`stage/05-ios-app`, `v0.8.0`):** iPhone target, local network,
    audio route/lifecycle handling, Simulator build, and physical-device test.
-9. **Resilience (`stage/07-resilience`, `v0.8.0`):** reconnect, session
+9. **Resilience (`stage/07-resilience`, `v0.9.0`):** reconnect, session
    renewal, timeouts, ordering, redaction, and failure tests.
 10. **POC release (`stage/08-poc-release`, `v1.0.0-poc`):** PT-BR scenarios,
    latency benchmark, device validation, setup guide, and demo script.
@@ -83,7 +83,9 @@ and AWS acceptance gates are documented in [Two MCPs + Agenda](multi-mcp-agenda.
 Local mocks validate routing, not Nova selection. The user subsequently authorized
 a real two-MCP query demo: both servers were selected; a UTC/local speech error
 was corrected and the repeat passed. See its report and retained private audio.
-Other live acceptance scenarios and merge/tag/push remain pending.
+The user accepted stage 6B and authorized the no-ff merge and annotated tag
+`v0.6.0`. Other live scenarios remain documented limitations. Push has not been
+authorized in this task.
 
 ### Integration boundary
 

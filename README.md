@@ -224,12 +224,107 @@ The terminal supports `-expect-tool notes.list`, `-request-id` for safe retry,
 for a second voice turn. No SwiftUI app is needed for this demonstration.
 See [MCP setup, safety and live results](docs/mcp-integration.md).
 
+## Consultar Notes e Agenda na mesma conversa
+
+Esta demo usa dois MCPs reais, dados fictícios e seleção automática do Nova.
+A chamada conjunta foi validada: Notes retornou o código **9274** e Agenda uma
+reunião em **16/05/2030, 10–11h America/Sao_Paulo**. A preparação por voz e a
+consulta fazem chamadas reais ao Bedrock e geram cobrança de áudio/texto.
+
+**Terminal 1:** reutilize seu perfil AWS e inicie a ponte, conforme a configuração
+acima (`make nova-bridge`, porta padrão 8091).
+
+**Terminal 2:** encerre o gateway anterior e prepare bancos isolados da demo:
+
+```bash
+make mcp-build agenda-build
+mkdir -p artifacts/readme-multi-mcp
+chmod 700 artifacts/readme-multi-mcp
+python3 - <<'CONFIG'
+import json
+from pathlib import Path
+root = Path.cwd()
+demo = root / "artifacts/readme-multi-mcp"
+servers = json.loads((root / "docs/mcp-servers.example.json").read_text())
+for server in servers:
+    kind = "notes" if server["alias"] == "memo" else "agenda"
+    server["command"] = str(root / f"bin/mcp-{kind}")
+    server["args"] = ["-db", str(demo / f"{kind}.sqlite")]
+    if kind == "agenda":
+        server["args"].append("-fixtures")
+path = demo / "servers.json"
+path.write_text(json.dumps(servers))
+path.chmod(0o600)
+CONFIG
+unset STS_MCP_COMMAND STS_MCP_ARGS STS_MCP_ALLOWED_TOOLS
+export STS_PROVIDER=nova
+export STS_GATEWAY_ADDRESS=127.0.0.1:8080
+export STS_NOVA_BRIDGE_URL=ws://127.0.0.1:8091
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+export STS_MCP_SERVERS="$(cat artifacts/readme-multi-mcp/servers.json)"
+export STS_DATABASE_PATH="$PWD/artifacts/readme-multi-mcp/audit.sqlite"
+export STS_MCP_EVIDENCE_PATH="$PWD/artifacts/readme-multi-mcp/private-tools.jsonl"
+make gateway
+```
+
+**Terminal 3:** crie a nota fictícia por voz e consulte os dois MCPs. `say` gera
+áudio local; `afconvert` produz WAV mono PCM16/16kHz para o cliente:
+
+```bash
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+say -v Luciana -r 165 -o artifacts/readme-multi-mcp/create.aiff \
+  'Crie uma nota com o título Aurora e o conteúdo: o código fictício de validação é nove dois sete quatro.'
+afconvert -f WAVE -d LEI16@16000 -c 1 \
+  artifacts/readme-multi-mcp/create.aiff artifacts/readme-multi-mcp/create.wav
+GOCACHE=/private/tmp/sts-go-cache go run ./cmd/voice-client -provider nova \
+  -wav "$PWD/artifacts/readme-multi-mcp/create.wav" \
+  -request-id readme-aurora-fixture-1 -expect-tool memo.notes.create \
+  -events "$PWD/artifacts/readme-multi-mcp/create-events.jsonl" \
+  -output "$PWD/artifacts/readme-multi-mcp/create-response.wav"
+
+say -v Luciana -r 165 -o artifacts/readme-multi-mcp/query.aiff \
+  'Consulte minhas notas e me diga o código da nota Aurora. Consulte também minha agenda local no dia dezesseis de maio de dois mil e trinta e me diga quais eventos estão agendados nesse dia.'
+afconvert -f WAVE -d LEI16@16000 -c 1 \
+  artifacts/readme-multi-mcp/query.aiff artifacts/readme-multi-mcp/query.wav
+GOCACHE=/private/tmp/sts-go-cache go run ./cmd/voice-client -provider nova \
+  -wav "$PWD/artifacts/readme-multi-mcp/query.wav" \
+  -request-id readme-two-mcp-query-1 \
+  -expect-tool memo.notes.list,local.agenda.list_events \
+  -events "$PWD/artifacts/readme-multi-mcp/query-events.jsonl" \
+  -output "$PWD/artifacts/readme-multi-mcp/query-response.wav"
+afplay artifacts/readme-multi-mcp/query-response.wav
+```
+
+O terminal deve mostrar resultados `ok` de `memo.notes.list` e
+`local.agenda.list_events`, seguidos da resposta com o código e o evento.
+`-expect-tool` verifica resultados depois da chamada; **não força a seleção** do
+modelo. Na demo validada, Agenda foi consultada duas vezes; consultas não têm
+efeitos. Confira `start_local/end_local` (10–11h), pois `start/end` são UTC
+(13–14h). Não há garantia de reprodução idêntica da fala do modelo.
+
+Os bancos/WAV/JSONL ficam privados e ignorados pelo Git. Reutilize o requestId
+da preparação para retry sem duplicar a nota; outra criação deliberada usa novo
+requestId. Encerre ponte e gateway com Ctrl+C após a demo.
+
+Testes locais, sem novas chamadas AWS: `make check` e `make nova-test`.
+Para verificar as **capturas da demo já executada nesta task**, se disponíveis:
+
+```bash
+python3 tests/e2e/multi_mcp_voice_evidence.py artifacts/multi-mcp-live
+```
+
+Esse verificador usa os arquivos originais da task, não os novos arquivos do
+roteiro acima. Veja [configuração, políticas, limites e relatório real](docs/multi-mcp-agenda.md).
+Outros cenários AWS permanecem fora desta validação; mocks comprovam roteamento,
+não seleção do modelo.
+
 ## Repository layout
 
 - `apps/apple`: shared SwiftUI application for iOS and macOS.
 - `cmd/gateway`: public HTTP/WebSocket gateway.
 - `cmd/voice-client`: terminal demonstration and WAV capture.
 - `cmd/mcp-notes`: local MCP notes server.
+- `cmd/mcp-agenda`: fictitious local SQLite agenda MCP server.
 - `internal`: protocol, provider, orchestration, audio, and persistence code.
 - `services/nova-bridge`: local adapter for the AWS bidirectional SDK.
 - `deploy/aws`: Bedrock IAM policy and setup runbook.
@@ -237,9 +332,3 @@ See [MCP setup, safety and live results](docs/mcp-integration.md).
 
 See [Architecture](docs/architecture.md) for responsibilities and trust
 boundaries.
-
-The additional pre-Apple stage supports two simultaneous stdio MCPs, Notes and
-a fictitious local SQLite Agenda. See [configuration, local tests and PT-BR AWS
-acceptance script](docs/multi-mcp-agenda.md). An authorized real Nova demo selected both MCPs and returned the stored code
-and correct local event time after a timezone presentation fix. Other live
-acceptance scenarios remain pending; mock tests establish host routing only.
