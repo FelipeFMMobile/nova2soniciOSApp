@@ -2,14 +2,15 @@
 
 Implementação na branch `codex/multi-mcp-agenda`, a partir da main após Notes
 v0.5.0. Esta etapa preserva Notes e não implementa macOS/iOS, contas externas,
-Google Calendar, recursos/credenciais AWS ou IAM. Aceite e validação Nova real
-continuam pendentes; merge, tag e push dependem do usuário.
+Google Calendar, recursos/credenciais AWS ou IAM. Aceite e validação Nova real completa
+continuam pendentes (a consulta simultânea foi validada; ver relatório abaixo); merge, tag e push dependem do usuário.
 
 Validação local em 16/09/2026: `make check` (build, todos os testes Go,
 race detector e vet) e quatro testes Python da ponte passaram. Os dez cenários
 com dois subprocessos MCP/SQLite e ponte mock passaram, com JSONL privado em
 `artifacts/multi-mcp-local/` (ignorado pelo Git). Renovação, áudio e isolamento de
-timeout também passaram nos testes Go. Nenhuma inferência AWS foi executada.
+timeout também passaram nos testes Go. Nenhuma inferência AWS foi executada nessa validação inicial; depois o usuário
+autorizou a demo real documentada abaixo.
 
 ## Configuração explícita do host
 
@@ -70,7 +71,8 @@ criados automaticamente em bancos normais.
 
 `start/end` usam RFC3339 com offset obrigatório. Por exemplo,
 `2030-05-20T09:00:00-03:00` é armazenado como epoch UTC e retornado como
-`2030-05-20T12:00:00Z`, com timezone `America/Sao_Paulo` no resultado.
+`2030-05-20T12:00:00Z`, com timezone `America/Sao_Paulo` no resultado. `start_local/end_local` são
+calculados pelo Go com offset explícito para apresentação ao usuário.
 Intervalos são semiabertos, início < fim, sem frações, no máximo 31 dias.
 Agenda oferece dias úteis, 09–18h locais; eventos duram no máximo oito horas.
 Slots aceitam duração 15–240 minutos em múltiplos de 15 e grid de 15 minutos
@@ -222,3 +224,59 @@ Referências consultadas em 16/09/2026:
 [AWS tool configuration](https://docs.aws.amazon.com/nova/latest/nova2-userguide/sonic-tool-configuration.html),
 [AWS Nova pricing](https://aws.amazon.com/nova/pricing/),
 [Bedrock pricing](https://aws.amazon.com/bedrock/pricing/).
+
+
+## Demo AWS autorizada — 16/09/2026
+
+Após o usuário pedir os testes reais e uma chamada consultando ambos os MCPs,
+foram executadas **duas sessões Nova reais** com `auto`, sete specs, ponte Python,
+gateway Go, os binários `mcp-notes`/`mcp-agenda` e SQLite isolado. Entrada: WAV
+PT-BR sintetizado com Luciana, enviado pelo cliente terminal. Nenhuma tool foi
+forçada. Pedido: “Consulte minhas notas e me diga o código da nota Aurora.
+Consulte também minha agenda local no dia dezesseis de maio de dois mil e trinta
+e me diga quais eventos estão agendados nesse dia.”
+
+Ambas selecionaram Notes e Agenda. A primeira recuperou o código corretamente,
+mas o modelo chamou 13–14h UTC de horário de Brasília: **resposta de fuso falhou**.
+O Go passou então a retornar também `start_local/end_local` computados e a
+spec indicou usar esses campos na fala. Testes locais/race/vet passaram após a
+correção. A repetição com o mesmo WAV respondeu corretamente:
+
+> O código da nota chamada Aurora é 9274.
+
+> Em sua agenda local para o dia dezesseis de maio de dois mil e trinta está
+> agendada uma reunião fictícia das dez horas às onze horas da manhã.
+
+| Consulta escolhida pelo Nova | Argumentos efetivos | Resultado real |
+| --- | --- | --- |
+| memo_notes_list → memo / notes.list | query=aurora | Nota Aurora, código fictício 9274 |
+| local_agenda_list_events → local / agenda.list_events | start=2030-05-16T00:00:00-03:00; end=2030-05-16T23:59:59-03:00 | fixture-2030; 13–14h UTC; 10–11h São Paulo |
+
+O modelo consultou Agenda **duas vezes**, com IDs diferentes e mesmos argumentos,
+em cada sessão; consultas são read-only, sem efeitos. Esse comportamento foi
+observado, não ocultado nem deduplicado como mutação. A repetição teve primeira
+saída de áudio em **4209ms**, áudio final **12,76s** (612480 bytes PCM16/24kHz).
+Não cumpre o alvo de 1,5s nesta amostra; não é benchmark representativo.
+
+Evidências privadas em `artifacts/multi-mcp-live/`, ignoradas pelo Git:
+`query-events.jsonl`/`query-response.wav` (primeira tentativa com falha de fuso),
+`query-2-events.jsonl`/`query-2-response.wav` (repetição correta),
+`private-tools.jsonl` (alias/tool/args/result por ID), bancos Notes/Agenda/audit.
+Verificação offline, sem novas chamadas AWS:
+
+```bash
+python3 tests/e2e/multi_mcp_voice_evidence.py artifacts/multi-mcp-live
+```
+
+O verificador passou: toolUse → resultado host → evidência MCP correlacionados,
+1 Notes + 2 Agenda na mesma sessão, código/horário local na resposta, resultado
+antes da fala, SQLite/audit consistentes e zero mutações Agenda. `make check`
+passou novamente; os quatro testes Python da ponte permanecem aprovados.
+
+Esta demo confirma seleção real dos **dois MCPs para este pedido** e resposta
+consistente após a correção. Não confirma todos os demais cenários AWS de
+criação, cancelamento, ambiguidade, falha, renovação ou custo/latência geral.
+As duas sessões geram cobrança normal Bedrock; custo monetário exato não foi
+apurado (usage/billing não capturados). Serviços da demo foram encerrados.
+Nenhum recurso AWS/IAM/credencial/agenda externa foi criado/alterado.
+Merge/tag/push continuam aguardando aceite do usuário.

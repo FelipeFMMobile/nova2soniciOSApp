@@ -80,8 +80,10 @@ updated `main`; neither Apple branch starts before stage 6B acceptance and merge
 
 Stage 6B adds Notes + local Agenda, without external calendars. Implementation
 and AWS acceptance gates are documented in [Two MCPs + Agenda](multi-mcp-agenda.md).
-Local mocks validate routing, not Nova selection. No new paid calls are authorized
-in this task; AWS validation, merge, tag and push await user authorization.
+Local mocks validate routing, not Nova selection. The user subsequently authorized
+a real two-MCP query demo: both servers were selected; a UTC/local speech error
+was corrected and the repeat passed. See its report and retained private audio.
+Other live acceptance scenarios and merge/tag/push remain pending.
 
 ### Integration boundary
 

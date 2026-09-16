@@ -240,5 +240,6 @@ boundaries.
 
 The additional pre-Apple stage supports two simultaneous stdio MCPs, Notes and
 a fictitious local SQLite Agenda. See [configuration, local tests and PT-BR AWS
-acceptance script](docs/multi-mcp-agenda.md). Nova real validation for this stage
-awaits authorization; mock tests establish host routing only.
+acceptance script](docs/multi-mcp-agenda.md). An authorized real Nova demo selected both MCPs and returned the stored code
+and correct local event time after a timezone presentation fix. Other live
+acceptance scenarios remain pending; mock tests establish host routing only.
