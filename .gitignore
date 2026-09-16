@@ -16,6 +16,7 @@ xcuserdata/
 .env.*
 !.env.example
 *.sqlite
+*.sqlite-*
 *.sqlite3
 *.db
 *.wav
