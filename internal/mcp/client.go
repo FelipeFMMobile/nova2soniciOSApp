@@ -25,6 +25,9 @@ type Client struct {
 }
 
 func Start(ctx context.Context, command string, args []string) (*Client, error) {
+	return StartWithTimeout(ctx, command, args, 5*time.Second)
+}
+func StartWithTimeout(ctx context.Context, command string, args []string, timeout time.Duration) (*Client, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -44,7 +47,7 @@ func Start(ctx context.Context, command string, args []string) (*Client, error) 
 	}
 	c := &Client{cmd: cmd, in: in, out: out, responses: make(chan rpcMessage, 16), done: make(chan struct{}), closing: make(chan struct{}), gate: make(chan struct{}, 1)}
 	go c.read()
-	initCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	initCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var initialized struct {
 		Version      string `json:"protocolVersion"`

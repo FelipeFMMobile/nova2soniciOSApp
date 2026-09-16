@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ type toolDone struct {
 	result mcp.Result
 }
 type toolRuntime struct {
+	evidence     *os.File
 	session      *orchestrator.Session
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -30,15 +32,24 @@ type toolRuntime struct {
 }
 
 func (s *Server) openTools(ctx context.Context, namespace, sessionID string) (*toolRuntime, error) {
-	if s.cfg.MCPCommand == "" && s.toolFactory == nil {
+	if s.cfg.MCPCommand == "" && len(s.cfg.MCPServers) == 0 && s.toolFactory == nil {
 		return nil, nil
 	}
 	toolCtx, cancel := context.WithCancel(ctx)
 	var backend orchestrator.Backend
 	var closeBackend func()
 	var err error
+	allowed := s.cfg.MCPAllowedTools
 	if s.toolFactory != nil {
 		backend, closeBackend, err = s.toolFactory(toolCtx)
+	} else if len(s.cfg.MCPServers) > 0 {
+		var router *mcp.Router
+		router, err = mcp.StartServers(toolCtx, s.cfg.MCPServers, s.cfg.MCPTimeout)
+		if err == nil {
+			backend = router
+			closeBackend = router.Close
+			allowed = router.AllowedTools()
+		}
 	} else {
 		var client *mcp.Client
 		client, err = mcp.Start(toolCtx, s.cfg.MCPCommand, s.cfg.MCPArgs)
@@ -53,7 +64,7 @@ func (s *Server) openTools(ctx context.Context, namespace, sessionID string) (*t
 	}
 	timeout := s.cfg.MCPTimeout
 	initCtx, stop := context.WithTimeout(toolCtx, timeout)
-	session, err := orchestrator.New(initCtx, backend, s.cfg.MCPAllowedTools, namespace)
+	session, err := orchestrator.New(initCtx, backend, allowed, namespace)
 	stop()
 	if err != nil {
 		cancel()
@@ -71,12 +82,20 @@ func (s *Server) openTools(ctx context.Context, namespace, sessionID string) (*t
 			return nil, err
 		}
 	}
+	runtime.evidence, err = openEvidence(s.cfg.MCPEvidencePath)
+	if err != nil {
+		runtime.Close()
+		return nil, err
+	}
 	return runtime, nil
 }
 func (t *toolRuntime) Close() {
 	t.cancel()
 	t.closeBackend()
 	t.wg.Wait()
+	if t.evidence != nil {
+		t.evidence.Close()
+	}
 	if t.audit != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()

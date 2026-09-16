@@ -22,13 +22,17 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 5. **MCP notes (original Stage 6, `stage/06-mcp-notes`, `v0.5.0`):** SQLite,
    configurable MCP discovery, create/list/delete tools, idempotency,
    confirmation, and native Nova tool use, validated through the terminal.
-6. **macOS app (`stage/04-macos-app`, `v0.6.0`):** shared SwiftUI code,
+6. **Two MCPs + local Agenda (`codex/multi-mcp-agenda`, `v0.6.0`, additional stage 6B):**
+   simultaneous Notes/Agenda stdio servers, host policies/routing, SQLite agenda,
+   isolated failures, terminal evidence and local tests before Apple apps.
+   Accepted by the user after the real two-MCP query demo; release `v0.6.0`.
+7. **macOS app (`stage/04-macos-app`, `v0.7.0`):** shared SwiftUI code,
    microphone capture, voice processing, incremental playback, and UI states.
-7. **iOS app (`stage/05-ios-app`, `v0.7.0`):** iPhone target, local network,
+8. **iOS app (`stage/05-ios-app`, `v0.8.0`):** iPhone target, local network,
    audio route/lifecycle handling, Simulator build, and physical-device test.
-8. **Resilience (`stage/07-resilience`, `v0.8.0`):** reconnect, session
+9. **Resilience (`stage/07-resilience`, `v0.9.0`):** reconnect, session
    renewal, timeouts, ordering, redaction, and failure tests.
-9. **POC release (`stage/08-poc-release`, `v1.0.0-poc`):** PT-BR scenarios,
+10. **POC release (`stage/08-poc-release`, `v1.0.0-poc`):** PT-BR scenarios,
    latency benchmark, device validation, setup guide, and demo script.
 
 ## Current implementation status
@@ -70,14 +74,23 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 
 ## Next priority: MCP before Apple apps
 
-Execution order is **0 → 1 → 2 → 3 → 6 → 4 → 5 → 7 → 8**.
+Execution order is **0 → 1 → 2 → 3 → 6 → 6B → 4 → 5 → 7 → 8**.
 Stage 3's acceptance/test/merge gate is closed. The MCP branch was created from
-updated `main`; neither Apple branch starts before MCP acceptance and merge.
+updated `main`; neither Apple branch starts before stage 6B acceptance and merge.
+
+Stage 6B adds Notes + local Agenda, without external calendars. Implementation
+and AWS acceptance gates are documented in [Two MCPs + Agenda](multi-mcp-agenda.md).
+Local mocks validate routing, not Nova selection. The user subsequently authorized
+a real two-MCP query demo: both servers were selected; a UTC/local speech error
+was corrected and the repeat passed. See its report and retained private audio.
+The user accepted stage 6B and authorized the no-ff merge and annotated tag
+`v0.6.0`. Other live scenarios remain documented limitations. Push has not been
+authorized in this task.
 
 ### Integration boundary
 
 The model does not connect directly to an MCP server. The Go orchestrator
-initializes a configured local MCP server over stdio, discovers `tools/list`,
+initializes configured local MCP servers over stdio, discovers `tools/list`,
 and converts allowed tool schemas into Nova `promptStart.toolConfiguration`.
 Nova chooses whether to emit `toolUse`; Go validates and executes `tools/call`,
 then the Python transport returns the correlated `toolResult` to the same Nova

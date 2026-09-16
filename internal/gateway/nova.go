@@ -251,6 +251,10 @@ started:
 		case finished := <-toolResults:
 			delete(tools.active, finished.job.ID)
 			tools.session.Complete(finished.job, finished.result)
+			if tools.evidenceResult(finished.job, finished.result) != nil {
+				sendError("storage_failed", "cannot persist private evidence")
+				return
+			}
 			state := "completed"
 			if finished.result.IsError {
 				state = "failed_or_unknown"
@@ -356,6 +360,10 @@ started:
 								sendError("storage_failed", "cannot persist tool decision")
 								return
 							}
+							if tools.evidenceResult(job, *immediate) != nil {
+								sendError("storage_failed", "cannot persist private evidence")
+								return
+							}
 							if stream.SendToolResult(job.ID, *immediate) != nil {
 								sendError("provider_unavailable", "Nova tool result delivery failed")
 								return
@@ -364,7 +372,7 @@ started:
 								return
 							}
 							if p := tools.session.Pending; p != nil {
-								if !emit([]protocol.Event{{Type: protocol.ToolConfirmation, TurnID: call.TurnID, Tool: &protocol.Tool{OperationID: p.OperationID, Name: p.Name, Arguments: p.Args}, Message: "Diga exatamente confirmo excluir para notas ou confirmo executar para outra ação, em um novo turno."}}) {
+								if !emit([]protocol.Event{{Type: protocol.ToolConfirmation, TurnID: call.TurnID, Tool: &protocol.Tool{OperationID: p.OperationID, Name: p.Name, Arguments: p.Args}, Message: "Diga exatamente " + tools.session.ConfirmationPhrase() + ", em um novo turno, para o alvo exibido."}}) {
 									return
 								}
 							}

@@ -11,10 +11,13 @@ const ProtocolVersion = "2025-11-25"
 const MaxMessage = 256 * 1024
 
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema"`
-	Annotations map[string]any  `json:"annotations,omitempty"`
+	Server       string          `json:"-"`
+	OriginalName string          `json:"-"`
+	HostPolicy   Policy          `json:"-"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"inputSchema"`
+	Annotations  map[string]any  `json:"annotations,omitempty"`
 }
 type Content struct {
 	Type string `json:"type"`
