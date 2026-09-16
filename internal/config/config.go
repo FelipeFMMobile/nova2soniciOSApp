@@ -1,10 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -16,6 +19,10 @@ type Config struct {
 	NovaBridgeURL     string
 	NovaMaxSessionAge time.Duration
 	DatabasePath      string
+	MCPCommand        string
+	MCPArgs           []string
+	MCPAllowedTools   []string
+	MCPTimeout        time.Duration
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
@@ -25,7 +32,7 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	for _, key := range []string{"STS_READ_TIMEOUT", "STS_WRITE_TIMEOUT", "STS_IDLE_TIMEOUT", "STS_TURN_TIMEOUT", "STS_NOVA_MAX_SESSION_AGE"} {
+	for _, key := range []string{"STS_READ_TIMEOUT", "STS_WRITE_TIMEOUT", "STS_IDLE_TIMEOUT", "STS_TURN_TIMEOUT", "STS_NOVA_MAX_SESSION_AGE", "STS_MCP_TIMEOUT"} {
 		if value := os.Getenv(key); value != "" {
 			parsed, err := time.ParseDuration(value)
 			if err != nil || parsed <= 0 {
@@ -49,6 +56,9 @@ func Load() (Config, error) {
 		NovaBridgeURL:     env("STS_NOVA_BRIDGE_URL", "ws://127.0.0.1:8091"),
 		NovaMaxSessionAge: duration("STS_NOVA_MAX_SESSION_AGE", 7*time.Minute+30*time.Second),
 		DatabasePath:      env("STS_DATABASE_PATH", "./data/sts.sqlite"),
+		MCPCommand:        os.Getenv("STS_MCP_COMMAND"),
+		MCPTimeout:        duration("STS_MCP_TIMEOUT", 10*time.Second),
+		MCPAllowedTools:   strings.Split(env("STS_MCP_ALLOWED_TOOLS", "notes.create,notes.list,notes.delete"), ","),
 		ReadTimeout:       duration("STS_READ_TIMEOUT", 15*time.Second),
 		WriteTimeout:      duration("STS_WRITE_TIMEOUT", 15*time.Second),
 		IdleTimeout:       duration("STS_IDLE_TIMEOUT", 90*time.Second),
@@ -57,6 +67,17 @@ func Load() (Config, error) {
 		TurnTimeout:       duration("STS_TURN_TIMEOUT", 30*time.Second),
 	}
 
+	if raw := os.Getenv("STS_MCP_ARGS"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &cfg.MCPArgs); err != nil {
+			return Config{}, fmt.Errorf("STS_MCP_ARGS must be a JSON string array")
+		}
+	}
+	if cfg.MCPCommand != "" && !filepath.IsAbs(cfg.MCPCommand) {
+		return Config{}, fmt.Errorf("STS_MCP_COMMAND must be an absolute executable path")
+	}
+	for i, name := range cfg.MCPAllowedTools {
+		cfg.MCPAllowedTools[i] = strings.TrimSpace(name)
+	}
 	if cfg.Environment != "development" && cfg.DevelopmentToken == "" {
 		return Config{}, fmt.Errorf("STS_DEVELOPMENT_TOKEN is required outside development")
 	}

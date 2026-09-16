@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"stsmodel.local/poc/internal/config"
+	"stsmodel.local/poc/internal/orchestrator"
 	"stsmodel.local/poc/internal/provider"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	connections map[*websocket.Conn]struct{}
 	wg          sync.WaitGroup
 	metrics     Counters
+	toolFactory func(context.Context) (orchestrator.Backend, func(), error)
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
@@ -45,6 +47,12 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	if cfg.NovaMaxSessionAge == 0 {
 		cfg.NovaMaxSessionAge = 7*time.Minute + 30*time.Second
+	}
+	if cfg.MCPTimeout == 0 {
+		cfg.MCPTimeout = 10 * time.Second
+	}
+	if cfg.MCPTimeout <= 0 {
+		return nil, fmt.Errorf("MCP timeout must be positive")
 	}
 	if cfg.Provider == "nova" && (cfg.NovaBridgeURL == "" || cfg.NovaMaxSessionAge <= 0) {
 		return nil, fmt.Errorf("Nova requires a bridge URL and positive session age")

@@ -31,6 +31,7 @@ const (
 	ToolStarted      = "tool.started"
 	ToolResult       = "tool.result"
 	ToolConfirmation = "tool.confirmation"
+	ToolConfirm      = "tool.confirm"
 	Error            = "error"
 )
 
@@ -40,12 +41,13 @@ type Metrics struct {
 	InterruptionMS float64 `json:"interruptionMs,omitempty"`
 }
 
-// Tool events are reserved for Stage 6; clients must not execute tools locally.
+// Tools execute on the gateway; clients may only confirm a pending operation.
 type Tool struct {
 	OperationID string          `json:"operationId"`
 	Name        string          `json:"name"`
 	Arguments   json.RawMessage `json:"arguments,omitempty"`
 	Result      json.RawMessage `json:"result,omitempty"`
+	Approved    *bool           `json:"approved,omitempty"`
 }
 
 type Event struct {
@@ -55,6 +57,7 @@ type Event struct {
 	TurnID     string   `json:"turnId,omitempty"`
 	Sequence   uint64   `json:"sequence,omitempty"`
 	Provider   string   `json:"provider,omitempty"`
+	RequestID  string   `json:"requestId,omitempty"`
 	State      string   `json:"state,omitempty"`
 	Audio      string   `json:"audio,omitempty"`
 	SampleRate int      `json:"sampleRate,omitempty"`
@@ -100,17 +103,24 @@ func DecodeClient(data []byte) (Event, error) {
 			return Event{}, fmt.Errorf("turnId is required")
 		}
 	case SessionStop:
+	case ToolConfirm:
+		if event.Tool == nil || !ValidID(event.Tool.OperationID) || event.Tool.Approved == nil || event.Tool.Name != "" || len(event.Tool.Arguments) > 0 || len(event.Tool.Result) > 0 {
+			return Event{}, fmt.Errorf("confirmation requires operationId and approved only")
+		}
 	default:
 		return Event{}, fmt.Errorf("unsupported client event")
 	}
 	if event.Type != SessionStart && event.SessionID == "" {
 		return Event{}, fmt.Errorf("sessionId is required")
 	}
-	if event.Text != "" || event.State != "" || event.Role != "" || event.Stage != "" || event.Code != "" || event.Message != "" || event.Metrics != nil || event.Tool != nil {
+	if event.Text != "" || event.State != "" || event.Role != "" || event.Stage != "" || event.Code != "" || event.Message != "" || event.Metrics != nil || (event.Tool != nil && event.Type != ToolConfirm) {
 		return Event{}, fmt.Errorf("server fields are not allowed in client events")
 	}
 	if event.Type != AudioAppend && (event.Audio != "" || event.SampleRate != 0) {
 		return Event{}, fmt.Errorf("audio fields require audio.append")
+	}
+	if event.RequestID != "" && (event.Type != SessionStart || !ValidID(event.RequestID)) {
+		return Event{}, fmt.Errorf("requestId requires session.start and a valid ID")
 	}
 	if event.Type != SessionStart && event.Provider != "" {
 		return Event{}, fmt.Errorf("provider is only allowed in session.start")
