@@ -43,8 +43,9 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 - Stage 1 is merged into `main` and tagged `v0.2.0`.
 - Stage 2 is implemented on `stage/02-go-gateway`: protocol v1, HTTP endpoints,
   authenticated WebSocket, bounded sessions, fake provider, cancellation,
-  metrics, terminal WAV demo, and concurrency tests. It awaits user acceptance
-  before merge/tag `v0.3.0`. No AWS calls are needed for this stage.
+  metrics, terminal WAV demo, and concurrency tests. The user confirmed the
+  terminal execution and accepted progression to Stage 3. No AWS calls were
+  needed for Stage 2.
 
 ## Acceptance targets
 
