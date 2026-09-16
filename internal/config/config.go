@@ -18,6 +18,8 @@ type Config struct {
 	WriteTimeout     time.Duration
 	IdleTimeout      time.Duration
 	MaxEventBytes    int64
+	MaxSessions      int
+	TurnTimeout      time.Duration
 }
 
 func Load() (Config, error) {
@@ -32,6 +34,8 @@ func Load() (Config, error) {
 		WriteTimeout:     duration("STS_WRITE_TIMEOUT", 15*time.Second),
 		IdleTimeout:      duration("STS_IDLE_TIMEOUT", 90*time.Second),
 		MaxEventBytes:    int64(integer("STS_MAX_EVENT_BYTES", 512*1024)),
+		MaxSessions:      integer("STS_MAX_SESSIONS", 16),
+		TurnTimeout:      duration("STS_TURN_TIMEOUT", 30*time.Second),
 	}
 
 	if cfg.Environment != "development" && cfg.DevelopmentToken == "" {
@@ -39,6 +43,9 @@ func Load() (Config, error) {
 	}
 	if cfg.Provider != "fake" && cfg.Provider != "nova" {
 		return Config{}, fmt.Errorf("unsupported STS_PROVIDER %q", cfg.Provider)
+	}
+	if cfg.ReadTimeout <= 0 || cfg.WriteTimeout <= 0 || cfg.IdleTimeout <= 0 || cfg.TurnTimeout <= 0 {
+		return Config{}, fmt.Errorf("timeouts must be positive")
 	}
 	return cfg, nil
 }

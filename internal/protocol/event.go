@@ -78,6 +78,9 @@ func DecodeClient(data []byte) (Event, error) {
 	if event.Version != Version {
 		return Event{}, fmt.Errorf("unsupported protocol version")
 	}
+	if (event.SessionID != "" && !ValidID(event.SessionID)) || (event.TurnID != "" && !ValidID(event.TurnID)) {
+		return Event{}, fmt.Errorf("identifiers must be 1-128 ASCII letters, digits, underscores or hyphens")
+	}
 	switch event.Type {
 	case SessionStart:
 		if event.SessionID != "" || event.TurnID != "" || event.Sequence != 0 {
@@ -114,6 +117,18 @@ func DecodeClient(data []byte) (Event, error) {
 		return Event{}, fmt.Errorf("sequence is only allowed in audio.append")
 	}
 	return event, nil
+}
+
+func ValidID(id string) bool {
+	if len(id) == 0 || len(id) > 128 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 func DecodeAudio(encoded string) ([]byte, error) {
