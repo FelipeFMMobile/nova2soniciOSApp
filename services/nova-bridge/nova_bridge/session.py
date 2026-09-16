@@ -205,7 +205,11 @@ class NovaSession:
         await self._send({"event": {"sessionEnd": {}}})
         await self.stream.input_stream.close()
         if self.response_task:
-            self.response_task.cancel()
+            # Drain the in-flight Bedrock read after sessionEnd. Cancelling it
+            # immediately can trigger a cancelled-Future callback in AWS CRT.
+            _, pending = await asyncio.wait({self.response_task}, timeout=2)
+            if pending:
+                self.response_task.cancel()
             await asyncio.gather(self.response_task, return_exceptions=True)
 
     async def _send(self, event: dict[str, Any]) -> None:
@@ -225,6 +229,8 @@ class NovaSession:
             self.response_ready.set()
             while self.active:
                 result = await receiver.receive()
+                if not self.active:
+                    return
                 if result.value and result.value.bytes_:
                     event = json.loads(result.value.bytes_.decode("utf-8"))
                     await self.event_sink(event)
