@@ -72,7 +72,7 @@ func TestRefusalExpiryAndChangedTarget(t *testing.T) {
 	s, _ := setup(t)
 	args := json.RawMessage(`{"id":"note-1"}`)
 	s.Plan("delete-1", "notes_delete", "turn-1", args)
-	s.ObserveUser("turn-2", "não confirmo")
+	s.ObserveUser("turn-2", "não o confirmo")
 	if s.Pending != nil {
 		t.Fatal("refusal ignored")
 	}

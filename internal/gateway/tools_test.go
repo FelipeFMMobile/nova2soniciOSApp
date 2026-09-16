@@ -266,3 +266,50 @@ func TestGatewayRealStdioSQLiteRetryAcrossSessions(t *testing.T) {
 		t.Fatal(notes, err)
 	}
 }
+
+func TestMicrophoneContinuesWhileMCPRuns(t *testing.T) {
+	forwarded := make(chan struct{}, 1)
+	url := bridge(t, func(c *websocket.Conn, _ map[string]any) {
+		var input map[string]any
+		if c.ReadJSON(&input) != nil {
+			return
+		}
+		nativeUser(c, "u-1")
+		nativeTool(c, "tool-1", "notes_list", `{}`)
+		for c.ReadJSON(&input) == nil {
+			if input["type"] == "audio.append" {
+				forwarded <- struct{}{}
+				break
+			}
+		}
+		if waitTool(c) == nil {
+			return
+		}
+		nativeAudio(c, "a-1")
+		_ = rawEvent(c, "contentEnd", map[string]any{"contentId": "a-1", "stopReason": "END_TURN"})
+		for c.ReadJSON(&input) == nil {
+		}
+	})
+	cfg := testConfig()
+	cfg.Provider = "nova"
+	cfg.NovaBridgeURL = url
+	cfg.MCPAllowedTools = []string{"notes.list"}
+	s, _, ws := setup(t, cfg)
+	backend := &testTools{delay: 200 * time.Millisecond}
+	s.toolFactory = func(context.Context) (orchestrator.Backend, func(), error) { return backend, func() {}, nil }
+	c := dial(t, ws, "")
+	sid := startNova(t, c)
+	for sequence := uint64(1); sequence <= 2; sequence++ {
+		send(t, c, protocol.Event{Type: protocol.AudioAppend, SessionID: sid, TurnID: "input-1", Sequence: sequence, SampleRate: 16000, Audio: "AAAAAA=="})
+		if sequence == 1 {
+			until(t, c, protocol.ToolStarted)
+		}
+	}
+	select {
+	case <-forwarded:
+	case <-time.After(time.Second):
+		t.Fatal("MCP blocked microphone forwarding")
+	}
+	until(t, c, protocol.ToolResult)
+	until(t, c, protocol.TurnCompleted)
+}
