@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"stsmodel.local/poc/internal/mcp"
 	"time"
 )
 
@@ -19,6 +20,8 @@ type Config struct {
 	NovaBridgeURL     string
 	NovaMaxSessionAge time.Duration
 	DatabasePath      string
+	MCPServers        []mcp.ServerConfig
+	MCPEvidencePath   string
 	MCPCommand        string
 	MCPArgs           []string
 	MCPAllowedTools   []string
@@ -49,6 +52,7 @@ func Load() (Config, error) {
 		}
 	}
 	cfg := Config{
+		MCPEvidencePath:   os.Getenv("STS_MCP_EVIDENCE_PATH"),
 		Environment:       env("STS_ENV", "development"),
 		GatewayAddress:    env("STS_GATEWAY_ADDRESS", "127.0.0.1:8080"),
 		DevelopmentToken:  os.Getenv("STS_DEVELOPMENT_TOKEN"),
@@ -67,6 +71,17 @@ func Load() (Config, error) {
 		TurnTimeout:       duration("STS_TURN_TIMEOUT", 30*time.Second),
 	}
 
+	if raw := os.Getenv("STS_MCP_SERVERS"); raw != "" {
+		if cfg.MCPCommand != "" {
+			return Config{}, fmt.Errorf("use STS_MCP_SERVERS or STS_MCP_COMMAND, not both")
+		}
+		if err := json.Unmarshal([]byte(raw), &cfg.MCPServers); err != nil || len(cfg.MCPServers) == 0 {
+			return Config{}, fmt.Errorf("STS_MCP_SERVERS must be a nonempty JSON server array")
+		}
+		if err := mcp.ValidateServers(cfg.MCPServers); err != nil {
+			return Config{}, err
+		}
+	}
 	if raw := os.Getenv("STS_MCP_ARGS"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &cfg.MCPArgs); err != nil {
 			return Config{}, fmt.Errorf("STS_MCP_ARGS must be a JSON string array")

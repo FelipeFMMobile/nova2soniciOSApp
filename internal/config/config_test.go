@@ -90,3 +90,21 @@ func TestMCPConfigurationIsNotShellCode(t *testing.T) {
 		t.Fatal("relative executable accepted")
 	}
 }
+
+func TestExplicitMultipleServers(t *testing.T) {
+	t.Setenv("STS_MCP_COMMAND", "")
+	t.Setenv("STS_MCP_SERVERS", `[{"alias":"local","command":"/absolute/mcp-agenda","args":["-db","a path/agenda.sqlite"],"allowed_tools":["agenda.list_events"],"policies":{"agenda.list_events":"read_only"}}]`)
+	cfg, err := Load()
+	if err != nil || len(cfg.MCPServers) != 1 || cfg.MCPServers[0].Args[1] != "a path/agenda.sqlite" {
+		t.Fatal(cfg, err)
+	}
+	t.Setenv("STS_MCP_COMMAND", "/absolute/mcp-notes")
+	if _, err = Load(); err == nil {
+		t.Fatal("ambiguous configuration")
+	}
+	t.Setenv("STS_MCP_COMMAND", "")
+	t.Setenv("STS_MCP_SERVERS", `[{"alias":"a","command":"/bin/a","allowed_tools":["x"]}]`)
+	if _, err = Load(); err == nil {
+		t.Fatal("missing host policy")
+	}
+}

@@ -25,11 +25,34 @@ type rpcError struct {
 // Serve never writes logs to stdout. Host-only metadata carries retry identity
 // and approval: neither is accepted as a model tool argument.
 func Serve(ctx context.Context, in io.Reader, out io.Writer, store *storage.Store) error {
+	return ServeTools(ctx, in, out, "sts-notes", NotesTools(), func(ctx context.Context, name string, args json.RawMessage, key string, confirmed bool) Result {
+		if name == "notes.list" {
+			var input struct {
+				Query string `json:"query"`
+			}
+			_ = json.Unmarshal(args, &input)
+			notes, err := store.List(ctx, input.Query)
+			if err != nil {
+				return Failure("storage_failed")
+			}
+			return TextResult(map[string]any{"status": "ok", "notes": notes}, false)
+		}
+		if name == "notes.delete" && !confirmed {
+			return Failure("confirmation_required")
+		}
+		data, err := store.Mutate(ctx, key, name, args)
+		if err != nil {
+			return Failure("mutation_failed")
+		}
+		return TextResult(data, false)
+	})
+}
+
+func ServeTools(ctx context.Context, in io.Reader, out io.Writer, name string, tools []Tool, call func(context.Context, string, json.RawMessage, string, bool) Result) error {
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 4096), MaxMessage)
 	enc := json.NewEncoder(out)
 	initialized, ready := false, false
-	tools := NotesTools()
 	for scanner.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -59,7 +82,7 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, store *storage.Stor
 				break
 			}
 			initialized = true
-			result = map[string]any{"protocolVersion": ProtocolVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": "sts-notes", "version": "0.5.0"}}
+			result = map[string]any{"protocolVersion": ProtocolVersion, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]string{"name": name, "version": "0.5.0"}}
 		case req.Method == "ping":
 			result = map[string]any{}
 		case !ready:
@@ -95,29 +118,7 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, store *storage.Stor
 				result = Failure("invalid_arguments")
 				break
 			}
-			if p.Name == "notes.list" {
-				var args struct {
-					Query string `json:"query"`
-				}
-				_ = json.Unmarshal(p.Arguments, &args)
-				notes, err := store.List(ctx, args.Query)
-				if err != nil {
-					result = Failure("storage_failed")
-				} else {
-					result = TextResult(map[string]any{"status": "ok", "notes": notes}, false)
-				}
-			} else {
-				if p.Name == "notes.delete" && !p.Meta.Confirmed {
-					result = Failure("confirmation_required")
-					break
-				}
-				data, err := store.Mutate(ctx, p.Meta.Key, p.Name, p.Arguments)
-				if err != nil {
-					result = Failure("mutation_failed")
-				} else {
-					result = TextResult(data, false)
-				}
-			}
+			result = call(ctx, p.Name, p.Arguments, p.Meta.Key, p.Meta.Confirmed)
 		default:
 			resp.Error = &rpcError{-32601, "method not found"}
 		}
