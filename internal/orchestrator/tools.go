@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -21,8 +22,10 @@ type Backend interface {
 	Call(context.Context, string, json.RawMessage, string, bool) (mcp.Result, error)
 }
 type binding struct {
-	tool   mcp.Tool
-	schema *jsonschema.Schema
+	tool     mcp.Tool
+	schema   *jsonschema.Schema
+	policy   mcp.Policy
+	original string
 }
 type Pending struct {
 	OperationID string
@@ -33,6 +36,8 @@ type Pending struct {
 	Approved    bool
 }
 type Session struct {
+	intentTurn   string
+	intentText   string
 	backend      Backend
 	tools        map[string]binding
 	Specs        []map[string]any
@@ -41,6 +46,7 @@ type Session struct {
 	seen         map[string]string
 	cache        map[string]mcp.Result
 	calls        int
+	attempted    map[string]bool
 	mutationArgs map[string]string
 }
 type Job struct {
@@ -58,13 +64,13 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 	for _, name := range allowed {
 		permit[name] = true
 	}
-	s := &Session{backend: backend, tools: map[string]binding{}, namespace: namespace, seen: map[string]string{}, cache: map[string]mcp.Result{}, mutationArgs: map[string]string{}}
+	s := &Session{backend: backend, tools: map[string]binding{}, namespace: namespace, seen: map[string]string{}, cache: map[string]mcp.Result{}, mutationArgs: map[string]string{}, attempted: map[string]bool{}}
 	for _, tool := range discovered {
 		if !permit[tool.Name] {
 			continue
 		}
 		name := strings.ReplaceAll(strings.ReplaceAll(tool.Name, ".", "_"), "-", "_")
-		if !protocol.ValidID(name) || len(name) > 64 || len(tool.Description) > 4096 {
+		if !modelToolName.MatchString(name) || len(name) > 64 || len(tool.Description) > 4096 {
 			return nil, errors.New("unsupported tool metadata")
 		}
 		if _, duplicate := s.tools[name]; duplicate {
@@ -74,11 +80,26 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 		if err != nil {
 			return nil, errors.New("invalid MCP tool schema")
 		}
-		s.tools[name] = binding{tool: tool, schema: schema}
+		original := tool.OriginalName
+		if original == "" {
+			original = tool.Name
+		}
+		policy := tool.HostPolicy
+		if policy == "" {
+			switch original {
+			case "notes.list":
+				policy = mcp.ReadOnly
+			case "notes.create":
+				policy = mcp.ExplicitIntent
+			default:
+				policy = mcp.ConfirmLater
+			}
+		}
+		s.tools[name] = binding{tool: tool, schema: schema, policy: policy, original: original}
 		// Explicit approval policy lives here, not in untrusted MCP annotations.
 		description := tool.Description
-		if tool.Name != "notes.list" && tool.Name != "notes.create" {
-			description += " Esta ação exige confirmação do usuário em um turno posterior. Se receber confirmation_required, peça confirmo excluir (notas) ou confirmo executar, depois chame novamente com os mesmos argumentos."
+		if policy == mcp.ConfirmLater {
+			description += " Esta ação exige confirmação do usuário em um turno posterior. Se receber confirmation_required, peça confirmo excluir (notas), confirmo cancelar agendamento (agenda) ou confirmo executar, depois chame novamente com os mesmos argumentos."
 		}
 		// Bedrock's bidirectional wire format requires a JSON-encoded string,
 		// unlike MCP's inputSchema object (and some simplified AWS examples).
@@ -103,7 +124,11 @@ func key(namespace, name string, args json.RawMessage) string {
 func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.Result) {
 	fail := func(code string) (Job, *mcp.Result) {
 		r := mcp.Failure(code)
-		return Job{ID: id, Name: name, TurnID: turn}, &r
+		resolved := name
+		if b, ok := s.tools[name]; ok {
+			resolved = b.tool.Name
+		}
+		return Job{ID: id, Name: resolved, TurnID: turn, Args: append(json.RawMessage(nil), args...)}, &r
 	}
 	if !protocol.ValidID(id) {
 		return fail("invalid_tool_id")
@@ -125,7 +150,7 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 	s.calls++
 	s.seen[id] = k
 	j := Job{ID: id, Name: b.tool.Name, Key: k, TurnID: turn, Args: append(json.RawMessage(nil), args...)}
-	if b.tool.Name == "notes.create" || b.tool.Name == "notes.delete" {
+	if b.policy != mcp.ReadOnly {
 		// One mutation of each kind per logical request. Stable identity survives
 		// reconnects even if the model reformulates arguments: SQLite rejects the
 		// conflict instead of creating a second note. A deliberate new mutation
@@ -135,12 +160,15 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 		}
 		j.Key = key(s.namespace, b.tool.Name, json.RawMessage(`null`))
 	}
-	if b.tool.Name != "notes.list" {
+	if b.policy != mcp.ReadOnly {
 		if cached, ok := s.cache[j.Key]; ok {
 			return j, &cached
 		}
 	}
-	if b.tool.Name != "notes.list" && b.tool.Name != "notes.create" {
+	if b.policy != mcp.ReadOnly && s.attempted[j.Key] {
+		return fail("mutation_outcome_pending_or_unknown")
+	}
+	if b.policy == mcp.ConfirmLater {
 		p := s.Pending
 		if p != nil && time.Now().Before(p.Expires) && p.Name == j.Name && key(s.namespace, p.Name, p.Args) == k && p.Approved {
 			j.Confirmed = true
@@ -150,12 +178,16 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 			if p == nil || p.Name != j.Name || key(s.namespace, p.Name, p.Args) != k || time.Now().After(p.Expires) {
 				s.Pending = &Pending{OperationID: id, Name: j.Name, Args: j.Args, TurnID: turn, Expires: time.Now().Add(60 * time.Second)}
 			}
-			r := mcp.TextResult(map[string]any{"status": "confirmation_required", "operation_id": s.Pending.OperationID, "instruction": "Peça confirmação explícita em um novo turno. Não anuncie sucesso. Após confirmação, chame novamente a mesma ferramenta."}, false)
+			r := mcp.TextResult(map[string]any{"status": "confirmation_required", "operation_id": s.Pending.OperationID, "target": json.RawMessage(s.Pending.Args), "instruction": "Peça confirmação explícita em um novo turno: " + s.ConfirmationPhrase() + ". Não anuncie sucesso. Após confirmação, chame novamente a mesma ferramenta com o mesmo alvo."}, false)
 			return j, &r
 		}
 	}
-	if j.Name == "notes.create" || j.Name == "notes.delete" {
+	if b.policy == mcp.ExplicitIntent && b.original != "notes.create" && (s.intentTurn != turn || !explicitAgendaIntent(s.intentText)) {
+		return fail("clarification_required")
+	}
+	if b.policy != mcp.ReadOnly {
 		s.mutationArgs[j.Name] = k
+		s.attempted[j.Key] = true
 	}
 	return j, nil
 }
@@ -181,7 +213,14 @@ func (s *Session) Execute(ctx context.Context, j Job) mcp.Result {
 	return result
 }
 func (s *Session) Complete(j Job, r mcp.Result) {
-	if j.Name != "notes.list" && !r.IsError {
+	var policy mcp.Policy
+	for _, b := range s.tools {
+		if b.tool.Name == j.Name {
+			policy = b.policy
+			break
+		}
+	}
+	if policy != mcp.ReadOnly {
 		s.cache[j.Key] = r
 	}
 }
@@ -214,6 +253,11 @@ func normalize(text string) string {
 // Only a subsequent finalized USER ASR turn may authorize an action. Quoted
 // phrases, a bare 'sim', assistant output and tool arguments are insufficient.
 func (s *Session) ObserveUser(turn, text string) bool {
+	s.intentTurn = turn
+	s.intentText = normalize(text)
+	if strings.ContainsAny(text, "\"'“”‘’?") {
+		s.intentText = ""
+	}
 	p := s.Pending
 	if p == nil || turn == p.TurnID {
 		return false
@@ -224,10 +268,19 @@ func (s *Session) ObserveUser(turn, text string) bool {
 	}
 	phrase := normalize(text)
 	expected := "confirmo executar"
-	if p.Name == "notes.delete" {
+	original := p.Name
+	for _, b := range s.tools {
+		if b.tool.Name == p.Name {
+			original = b.original
+		}
+	}
+	if original == "notes.delete" {
 		expected = "confirmo excluir"
 	}
-	if phrase == expected {
+	if original == "agenda.cancel_event" {
+		expected = "confirmo cancelar agendamento"
+	}
+	if phrase == expected && !strings.ContainsAny(text, "\"'“”‘’?") {
 		p.Approved = true
 		return true
 	}
@@ -241,6 +294,11 @@ func (s *Session) Confirm(operationID string, approved bool) bool {
 	if p == nil || p.OperationID != operationID || time.Now().After(p.Expires) {
 		return false
 	}
+	for _, b := range s.tools {
+		if b.tool.Name == p.Name && b.original == "agenda.cancel_event" {
+			return false
+		}
+	}
 	if approved {
 		p.Approved = true
 	} else {
@@ -248,4 +306,43 @@ func (s *Session) Confirm(operationID string, approved bool) bool {
 	}
 	return true
 }
-func (s *Session) Interrupt() { s.Pending = nil }
+func (s *Session) Interrupt() { s.Pending = nil; s.intentText = "" }
+
+// Conservative PT-BR terminal POC grammar. Intent comes only from finalized
+// USER ASR, never annotations, arguments, model output or quoted text.
+var agendaIntent = regexp.MustCompile(`^(por favor )?((consulte|busque|leia) .+ e )?(agende|agenda|marque|crie um agendamento|crie um evento|quero agendar|quero marcar) .+`)
+var agendaDate = regexp.MustCompile(`\b\d{4} \d{2} \d{2}\b|\b\d{2} \d{2} \d{4}\b`)
+var agendaClock = regexp.MustCompile(`\b\d{1,2} \d{2}\b|\b\d{1,2}h(\d{2})?\b`)
+
+func explicitAgendaIntent(text string) bool {
+	if !agendaIntent.MatchString(text) || !agendaDate.MatchString(text) || !agendaClock.MatchString(text) {
+		return false
+	}
+	for _, word := range []string{"nao", "talvez", "se", "disse", "amanha", "depois", "algum"} {
+		for _, w := range strings.Fields(text) {
+			if w == word {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+var modelToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]*$`)
+
+func (s *Session) ConfirmationPhrase() string {
+	if s.Pending == nil {
+		return "confirmo executar"
+	}
+	for _, b := range s.tools {
+		if b.tool.Name == s.Pending.Name {
+			switch b.original {
+			case "notes.delete":
+				return "confirmo excluir"
+			case "agenda.cancel_event":
+				return "confirmo cancelar agendamento"
+			}
+		}
+	}
+	return "confirmo executar"
+}
