@@ -37,9 +37,9 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
   deployment artifacts were removed while preserving the incremental history.
 - The Nova bridge, AWS policy, PT-BR configuration, unit tests, and live smoke
   harness are implemented.
-- Stage 1 remains unmerged until the active AWS identity is granted
-  `bedrock:InvokeModelWithBidirectionalStream` and the live smoke test receives
-  audio from Nova 2 Sonic.
+- Stage 1 is accepted: IAM simulation returned `allowed`; the live PT-BR
+  smoke test captured 172,800 bytes / 3.6 seconds of PCM16 mono at 24 kHz.
+  The user authorized progression to Stage 2 after reviewing the AWS panel.
 
 ## Acceptance targets
 
