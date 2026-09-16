@@ -4,7 +4,7 @@ NOVA_OUTPUT ?= /private/tmp/sts-nova-response.wav
 NOVA_GATEWAY_OUTPUT ?= /private/tmp/sts-nova-gateway-response.wav
 NOVA_BARGE_OUTPUT ?= /private/tmp/sts-nova-gateway-barge-response.wav
 
-.PHONY: build test race vet gateway mcp fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke nova-demo nova-barge-demo
+.PHONY: build test race vet gateway mcp mcp-build mcp-gateway fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke nova-demo nova-barge-demo
 
 build:
 	env GOCACHE=$(GOCACHE) go build ./...
@@ -23,6 +23,12 @@ gateway:
 
 mcp:
 	env GOCACHE=$(GOCACHE) go run ./cmd/mcp-notes
+
+mcp-build:
+	env GOCACHE=$(GOCACHE) go build -o bin/mcp-notes ./cmd/mcp-notes
+
+mcp-gateway: mcp-build
+	env GOCACHE=$(GOCACHE) STS_PROVIDER=nova STS_MCP_COMMAND="$(CURDIR)/bin/mcp-notes" STS_MCP_ARGS='["-db","$(CURDIR)/data/sts.sqlite"]' go run ./cmd/gateway
 
 fmt:
 	gofmt -w cmd internal tests

@@ -41,7 +41,7 @@ type Stream struct {
 	cancel context.CancelFunc
 }
 
-func Open(ctx context.Context, url string, history []HistoryMessage) (*Stream, error) {
+func Open(ctx context.Context, url string, history []HistoryMessage, toolSets ...[]map[string]any) (*Stream, error) {
 	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
 	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
@@ -51,7 +51,11 @@ func Open(ctx context.Context, url string, history []HistoryMessage) (*Stream, e
 	fail := func() { stop(); _ = conn.Close() }
 	conn.SetReadLimit(1024 * 1024)
 	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if err := conn.WriteJSON(map[string]any{"type": "session.start", "history": history}); err != nil {
+	start := map[string]any{"type": "session.start", "history": history}
+	if len(toolSets) > 0 {
+		start["tools"] = toolSets[0]
+	}
+	if err := conn.WriteJSON(start); err != nil {
 		fail()
 		return nil, errors.New("Nova bridge startup failed")
 	}
@@ -85,6 +89,19 @@ func (s *Stream) SendAudio(encoded string) error {
 	_ = s.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err := s.conn.WriteJSON(map[string]string{"type": "audio.append", "audio": encoded}); err != nil {
 		return errors.New("Nova bridge write failed")
+	}
+	return nil
+}
+
+// SendToolResult is serialized with audio by the gateway session owner.
+func (s *Stream) SendToolResult(id string, result any) error {
+	data, err := json.Marshal(result)
+	if err != nil || len(data) > 65536 {
+		return errors.New("invalid tool result")
+	}
+	_ = s.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err = s.conn.WriteJSON(map[string]string{"type": "tool.result", "toolUseId": id, "content": string(data)}); err != nil {
+		return errors.New("Nova tool result transport failed")
 	}
 	return nil
 }

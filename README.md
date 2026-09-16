@@ -78,6 +78,25 @@ usage charges. Stop the Go gateway and Python bridge with Ctrl+C when finished.
 Recordings are ignored by Git. See [Nova integration](docs/nova-integration.md)
 for session behavior, limitations, and the live validation report.
 
+## Nova with MCP tools (before the Apple apps)
+
+Keep the Nova bridge running, then replace `make gateway` with:
+
+```bash
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+make mcp-gateway
+```
+
+Go discovers the local notes server's tools and presents them to Nova. The
+model requests tools; Go executes MCP calls and returns their actual results
+for spoken responses. Notes create/list/delete, durable retry, and subsequent
+voice confirmation before deletion have passed real AWS validation.
+
+The terminal supports `-expect-tool notes.list`, `-request-id` for safe retry,
+`-events /private/tmp/events.jsonl` for private evidence, and `-followup-wav`
+for a second voice turn. No SwiftUI app is needed for this demonstration.
+See [MCP setup, safety and live results](docs/mcp-integration.md).
+
 ## Repository layout
 
 - `apps/apple`: shared SwiftUI application for iOS and macOS.

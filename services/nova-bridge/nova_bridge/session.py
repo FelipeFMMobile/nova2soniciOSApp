@@ -97,7 +97,7 @@ class NovaSession:
         }
         if tools:
             prompt_start["toolUseOutputConfiguration"] = {"mediaType": "application/json"}
-            prompt_start["toolConfiguration"] = {"tools": tools}
+            prompt_start["toolConfiguration"] = {"tools": tools, "toolChoice": {"auto": {}}}
         await self._send({"event": {"promptStart": prompt_start}})
         await self._send({"event": {"contentStart": {
             "promptName": self.prompt_name,
@@ -183,7 +183,7 @@ class NovaSession:
                 "textInputConfiguration": {"mediaType": "text/plain"},
             },
         }}})
-        await self._send({"event": {"textInput": {
+        await self._send({"event": {"toolResult": {
             "promptName": self.prompt_name,
             "contentName": content_name,
             "content": content,

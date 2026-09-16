@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"stsmodel.local/poc/internal/audio"
+	"stsmodel.local/poc/internal/mcp"
 	"stsmodel.local/poc/internal/protocol"
 	"stsmodel.local/poc/internal/session"
 )
@@ -31,13 +33,17 @@ func main() {
 	selected := flag.String("provider", "fake", "fake or nova; nova requires an input WAV")
 	bargeWAV := flag.String("barge-wav", "", "Nova-only: send a second WAV during the first response to test native barge-in")
 	cancelAfter := flag.Duration("cancel-after", 0, "cancel the simulated response after this duration")
+	followup := flag.String("followup-wav", "", "Nova-only: second WAV after the first completed response (for voice confirmation)")
+	requestID := flag.String("request-id", "", "logical request ID; reuse for retry, use a new ID for a deliberate new mutation")
+	events := flag.String("events", "", "optional local JSONL event capture; includes sensitive transcripts and tool results")
+	expect := flag.String("expect-tool", "", "comma-separated MCP names that must return successful results, e.g. notes.create")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if *output == "" {
 		*output = "/private/tmp/sts-" + *selected + "-response.wav"
 	}
-	if err := runProvider(ctx, *url, *wav, *output, *cancelAfter, *selected, *bargeWAV); err != nil {
+	if err := runWithOptions(ctx, *url, *wav, *output, *cancelAfter, *selected, *bargeWAV, clientOptions{RequestID: *requestID, FollowupWAV: *followup, EventsPath: *events, ExpectedTools: strings.Split(*expect, ",")}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -48,6 +54,19 @@ func run(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.
 }
 
 func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.Duration, selected string, bargePaths ...string) error {
+	barge := ""
+	if len(bargePaths) > 0 {
+		barge = bargePaths[0]
+	}
+	return runWithOptions(ctx, url, wavPath, outputPath, cancelAfter, selected, barge, clientOptions{})
+}
+
+type clientOptions struct {
+	RequestID, FollowupWAV, EventsPath string
+	ExpectedTools                      []string
+}
+
+func runWithOptions(ctx context.Context, url, wavPath, outputPath string, cancelAfter time.Duration, selected, bargePath string, options clientOptions) error {
 	if selected != "fake" && selected != "nova" {
 		return fmt.Errorf("provider must be fake or nova")
 	}
@@ -55,11 +74,11 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 		return fmt.Errorf("Nova requires -wav with PT-BR mono PCM16 at 16 kHz")
 	}
 	var bargeAudio []byte
-	if len(bargePaths) > 0 && bargePaths[0] != "" {
+	if bargePath != "" {
 		if selected != "nova" || cancelAfter != 0 {
 			return fmt.Errorf("barge-wav requires Nova and cannot be combined with cancel-after")
 		}
-		file, err := os.Open(bargePaths[0])
+		file, err := os.Open(bargePath)
 		if err != nil {
 			return err
 		}
@@ -69,6 +88,37 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 			return err
 		}
 	}
+	var followupAudio []byte
+	if options.FollowupWAV != "" {
+		if selected != "nova" || bargePath != "" || cancelAfter != 0 {
+			return fmt.Errorf("followup-wav requires Nova without barge-wav or cancellation")
+		}
+		file, err := os.Open(options.FollowupWAV)
+		if err != nil {
+			return err
+		}
+		followupAudio, err = audio.ReadPCM16WAV(file, 16000, session.MaxTurnBytes)
+		file.Close()
+		if err != nil {
+			return err
+		}
+	}
+	if options.RequestID == "" {
+		options.RequestID = rand.Text()
+	}
+	if !protocol.ValidID(options.RequestID) {
+		return fmt.Errorf("invalid request-id")
+	}
+	var capture *json.Encoder
+	if options.EventsPath != "" {
+		file, err := os.OpenFile(options.EventsPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		capture = json.NewEncoder(file)
+	}
+	successfulTools := map[string]bool{}
 	if cancelAfter < 0 {
 		return fmt.Errorf("cancel-after must not be negative")
 	}
@@ -100,7 +150,7 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 		_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		return c.WriteJSON(e)
 	}
-	if err := write(protocol.Event{Type: protocol.SessionStart, Provider: selected}); err != nil {
+	if err := write(protocol.Event{Type: protocol.SessionStart, Provider: selected, RequestID: options.RequestID}); err != nil {
 		return err
 	}
 	_ = c.SetReadDeadline(time.Now().Add(30 * time.Second))
@@ -113,6 +163,7 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 	}
 	sid, tid := ready.SessionID, rand.Text()
 	fmt.Printf("session=%s provider=%s turn=%s\n", sid, ready.Provider, tid)
+	fmt.Printf("request-id=%s\n", options.RequestID)
 	sequence := uint64(0)
 	for offset := 0; offset < len(pcm); offset += 1024 {
 		if err := ctx.Err(); err != nil {
@@ -177,6 +228,10 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 	outputTurnID := tid
 	bargeStarted, bargeInterrupted := false, false
 	bargeOffset := 0
+	followupOffset := 0
+	followupStarted := false
+	var followupAt time.Time
+	firstOutputTurn := ""
 	var silence <-chan time.Time
 	if selected == "nova" {
 		ticker := time.NewTicker(32 * time.Millisecond)
@@ -198,6 +253,12 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 					copy(frame, bargeAudio[bargeOffset:end])
 					bargeOffset = end
 				}
+				if !followupAt.IsZero() && time.Now().After(followupAt) && followupOffset < len(followupAudio) {
+					followupStarted = true
+					end := min(followupOffset+1024, len(followupAudio))
+					copy(frame, followupAudio[followupOffset:end])
+					followupOffset = end
+				}
 				if err := write(protocol.Event{Type: protocol.AudioAppend, SessionID: sid, TurnID: tid, Sequence: sequence, SampleRate: 16000, Audio: base64.StdEncoding.EncodeToString(frame)}); err != nil {
 					return err
 				}
@@ -214,6 +275,11 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 				return r.err
 			}
 			e := r.event
+			if capture != nil {
+				if err := capture.Encode(e); err != nil {
+					return err
+				}
+			}
 			if e.Version != 1 || e.SessionID != sid {
 				return fmt.Errorf("protocol/session mismatch")
 			}
@@ -229,6 +295,23 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 				return fmt.Errorf("%s: %s", e.Code, e.Message)
 			case protocol.Transcript:
 				fmt.Printf("%s: %s\n", e.Role, e.Text)
+			case protocol.ToolStarted:
+				fmt.Printf("tool.started id=%s name=%s args=%s\n", e.Tool.OperationID, e.Tool.Name, e.Tool.Arguments)
+			case protocol.ToolConfirmation:
+				fmt.Printf("tool.confirmation id=%s %s\n", e.Tool.OperationID, e.Message)
+			case protocol.ToolResult:
+				fmt.Printf("tool.result id=%s name=%s result=%s\n", e.Tool.OperationID, e.Tool.Name, e.Tool.Result)
+				var result mcp.Result
+				if json.Unmarshal(e.Tool.Result, &result) == nil && !result.IsError {
+					for _, content := range result.Content {
+						var value struct {
+							Status string `json:"status"`
+						}
+						if json.Unmarshal([]byte(content.Text), &value) == nil && value.Status != "confirmation_required" && value.Status != "error" && value.Status != "" {
+							successfulTools[e.Tool.Name] = true
+						}
+					}
+				}
 			case protocol.SessionState:
 				fmt.Printf("state=%s\n", e.State)
 			case protocol.AudioOutput:
@@ -260,7 +343,15 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 				if len(bargeAudio) > 0 && !bargeInterrupted {
 					return fmt.Errorf("Nova completed before native barge-in; interruption scenario did not pass")
 				}
-				file, err := os.Create(outputPath)
+				path := outputPath
+				if len(followupAudio) > 0 && !followupStarted {
+					path = outputPath + ".turn-1.wav"
+					firstOutputTurn = e.TurnID
+				}
+				if followupStarted && (e.TurnID == firstOutputTurn || followupOffset < len(followupAudio)) {
+					continue
+				}
+				file, err := os.Create(path)
 				if err != nil {
 					return err
 				}
@@ -273,7 +364,12 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 					return closeErr
 				}
 				metrics, _ := json.Marshal(e.Metrics)
-				fmt.Printf("audio=%s bytes=%d metrics=%s\n", outputPath, len(response), metrics)
+				fmt.Printf("audio=%s bytes=%d metrics=%s\n", path, len(response), metrics)
+				if len(followupAudio) > 0 && !followupStarted {
+					followupAt = time.Now().Add(time.Second)
+					deadline.Reset(45 * time.Second)
+					continue
+				}
 				stopping = true
 				cancellation = nil
 				if err := write(protocol.Event{Type: protocol.SessionStop, SessionID: sid}); err != nil {
@@ -283,6 +379,9 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 				response = nil
 				sampleRate = 0
 				audioSequence = 0
+				if followupStarted {
+					continue
+				}
 				if len(bargeAudio) > 0 && bargeStarted {
 					bargeInterrupted = true
 					fmt.Println("native barge-in confirmed; old audio discarded")
@@ -295,6 +394,11 @@ func runProvider(ctx context.Context, url, wavPath, outputPath string, cancelAft
 				}
 			case protocol.SessionStopped:
 				fmt.Println("session stopped")
+				for _, name := range options.ExpectedTools {
+					if name != "" && !successfulTools[name] {
+						return fmt.Errorf("expected successful tool %s was not observed", name)
+					}
+				}
 				return nil
 			}
 		}
