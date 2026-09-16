@@ -14,11 +14,13 @@ import (
 const AgendaTimezone = "America/Sao_Paulo"
 
 type AgendaEvent struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Start  string `json:"start"`
-	End    string `json:"end"`
-	Status string `json:"status"`
+	StartLocal string `json:"start_local"`
+	EndLocal   string `json:"end_local"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	Start      string `json:"start"`
+	End        string `json:"end"`
+	Status     string `json:"status"`
 }
 type AgendaInput struct {
 	ID       string `json:"id"`
@@ -83,6 +85,7 @@ func (s *Agenda) Events(ctx context.Context, start, end string) ([]AgendaEvent, 
 		}
 		e.Start = time.Unix(x, 0).UTC().Format(time.RFC3339)
 		e.End = time.Unix(y, 0).UTC().Format(time.RFC3339)
+		e.localTimes()
 		events = append(events, e)
 	}
 	return events, rows.Err()
@@ -108,7 +111,9 @@ func (s *Agenda) Slots(ctx context.Context, i AgendaInput) ([]AgendaEvent, error
 			return nil, err
 		}
 		if !conflict {
-			slots = append(slots, AgendaEvent{Start: x.Format(time.RFC3339), End: y.Format(time.RFC3339), Status: "available"})
+			slot := AgendaEvent{Start: x.Format(time.RFC3339), End: y.Format(time.RFC3339), Status: "available"}
+			slot.localTimes()
+			slots = append(slots, slot)
 		}
 	}
 	return slots, nil
@@ -164,6 +169,7 @@ func (s *Agenda) MutateAgenda(ctx context.Context, key, name string, args json.R
 			return nil, errors.New("slot_conflict")
 		}
 		event := AgendaEvent{ID: rand.Text(), Title: i.Title, Start: a.Format(time.RFC3339), End: b.Format(time.RFC3339), Status: "active"}
+		event.localTimes()
 		if _, err = tx.ExecContext(ctx, `INSERT INTO agenda_events VALUES(?,?,?,?,?)`, event.ID, event.Title, a.Unix(), b.Unix(), event.Status); err != nil {
 			return nil, err
 		}
@@ -196,4 +202,14 @@ func (s *Agenda) MutateAgenda(ctx context.Context, key, name string, args json.R
 func (s *Agenda) SeedFixtures(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO agenda_events VALUES('fixture-2030','Reunião fictícia',1905166800,1905170400,'active')`)
 	return err
+}
+
+// UTC is authoritative in storage; local presentation is computed by Go so
+// the model need not infer an offset from the timezone label.
+func (e *AgendaEvent) localTimes() {
+	loc, _ := time.LoadLocation(AgendaTimezone)
+	start, _ := time.Parse(time.RFC3339, e.Start)
+	end, _ := time.Parse(time.RFC3339, e.End)
+	e.StartLocal = start.In(loc).Format(time.RFC3339)
+	e.EndLocal = end.In(loc).Format(time.RFC3339)
 }

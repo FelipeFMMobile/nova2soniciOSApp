@@ -38,7 +38,7 @@ func TestAgendaUTCConflictReplayAndCancel(t *testing.T) {
 		t.Fatal("key conflict accepted")
 	}
 	events, err := s.Events(ctx, "2030-05-20T00:00:00Z", "2030-05-21T00:00:00Z")
-	if err != nil || len(events) != 1 || events[0].Start != "2030-05-20T12:00:00Z" {
+	if err != nil || len(events) != 1 || events[0].Start != "2030-05-20T12:00:00Z" || events[0].StartLocal != "2030-05-20T09:00:00-03:00" || events[0].EndLocal != "2030-05-20T10:00:00-03:00" {
 		t.Fatal(events, err)
 	}
 	args, _ := json.Marshal(map[string]string{"id": events[0].ID})
