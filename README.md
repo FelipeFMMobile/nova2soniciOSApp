@@ -15,7 +15,7 @@ Nova 2 Sonic provides managed bidirectional inference through AWS Bedrock.
 ## Configurar o ambiente para conectar à AWS
 
 Execute os comandos na raiz do repositório. A conexão com o Bedrock é feita
-somente pela ponte Python no Mac; o gateway Go e o futuro app Apple não precisam
+somente pela ponte Python no Mac; o gateway Go e o app Apple não precisam
 receber as credenciais AWS. Para voz bidirecional, use credenciais AWS padrão
 com SigV4: **uma API key do Bedrock não funciona para essa operação**.
 [Compatibilidade da API AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/models-api-compatibility.html).
@@ -317,6 +317,18 @@ Esse verificador usa os arquivos originais da task, não os novos arquivos do
 roteiro acima. Veja [configuração, políticas, limites e relatório real](docs/multi-mcp-agenda.md).
 Outros cenários AWS permanecem fora desta validação; mocks comprovam roteamento,
 não seleção do modelo.
+
+## App iOS e macOS
+
+Abra `apps/apple/NovaVoice.xcodeproj` no Xcode 27, scheme `NovaVoice`, e escolha
+My Mac ou iPhone Simulator iOS 27. Em **Conexão local**, informe URL/token do
+gateway e provider correspondente. O botão inicia/encerra a conversa contínua.
+Há transcrições e resultados das ferramentas Notes/Agenda, sem credenciais AWS
+no app. Comece pelo modo fake, que não usa microfone nem AWS.
+
+Veja [como executar e testar o app](docs/apple-app.md) para configuração Xcode,
+Nova + dois MCPs, rede local no iPhone e limites de idempotência. SDK 27 com
+deployment macOS 26/iOS 27; validação física e aceite de áudio ainda pendentes.
 
 ## Repository layout
 

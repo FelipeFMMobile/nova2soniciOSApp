@@ -74,6 +74,31 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
 
 ## Next priority: MCP before Apple apps
 
+### Apple foundation — implemented, pending hardware acceptance
+
+After stage 6B was merged into `main` at `d43cc4c`, the user authorized Apple
+implementation. Branch `stage/04-macos-app` now contains a single multiplatform
+SwiftUI target, a tested VoiceCore package, authenticated/bounded WebSocket,
+microphone conversion to PCM16 mono 16k, voice processing, streaming 24k playback,
+turn sequencing/cancellation, transcript and dual-MCP result/confirmation UI.
+The shared iPhone target is enabled now; this does not close Stage 5's physical
+device/signing/route validation gate or start its branch prematurely.
+
+Local validation on 16/09/2026: macOS and iOS Simulator builds passed; 11 Swift
+tests passed including synthetic conversion and two fake gateway lifecycles;
+the iOS XCUITest passed against the real Go fake gateway; `make check` and four
+Python bridge tests passed. No AWS inference or microphone capture was executed
+for these tests. An initial UI run passed but diagnostic finalization stalled;
+after removing unnecessary AVAudioSession deactivation in hardware-free tests,
+the final test command exited successfully.
+
+Deployment is macOS 26 with SDK 27 for this Mac, and iOS 27. The detected iPhone
+is on 26.6 and unavailable: lowering deployment or using an iOS 27 device requires
+a user decision in Stage 5. Manual Mac Nova microphone/echo/barge-in/tool tests
+remain the Stage 4 acceptance gate; physical iPhone tests remain Stage 5.
+No merge, tag or push for the Apple stage has been performed. See
+[Apple setup and validation](apple-app.md).
+
 Execution order is **0 → 1 → 2 → 3 → 6 → 6B → 4 → 5 → 7 → 8**.
 Stage 3's acceptance/test/merge gate is closed. The MCP branch was created from
 updated `main`; neither Apple branch starts before stage 6B acceptance and merge.
