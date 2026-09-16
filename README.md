@@ -12,6 +12,131 @@ Nova 2 Sonic provides managed bidirectional inference through AWS Bedrock.
 - Python 3.12 for the small Bedrock transport bridge
 - An AWS account with Nova 2 Sonic access in `us-east-1`
 
+## Configurar o ambiente para conectar à AWS
+
+Execute os comandos na raiz do repositório. A conexão com o Bedrock é feita
+somente pela ponte Python no Mac; o gateway Go e o futuro app Apple não precisam
+receber as credenciais AWS. Para voz bidirecional, use credenciais AWS padrão
+com SigV4: **uma API key do Bedrock não funciona para essa operação**.
+[Compatibilidade da API AWS](https://docs.aws.amazon.com/bedrock/latest/userguide/models-api-compatibility.html).
+
+### 1. Instalar as ferramentas
+
+Instale a [AWS CLI v2 para macOS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html),
+Go 1.27+ e Python 3.12. Confira as versões e instale as dependências da ponte:
+
+```bash
+aws --version
+go version
+python3.12 --version
+make nova-install
+```
+
+### 2. Autorizar o usuário ou a role
+
+Um administrador deve conceder à identidade usada pelo perfil a política
+mínima em [deploy/aws/iam-policy.json](deploy/aws/iam-policy.json). Ela permite
+`bedrock:InvokeModelWithBidirectionalStream` apenas para:
+
+```text
+arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0
+```
+
+No IAM, aplique essa política ao usuário/role; para IAM Identity Center, ela
+deve fazer parte das permissões da role atribuída à conta. `AmazonBedrockFullAccess`
+também pode conceder acesso, mas é mais ampla que o necessário para esta POC.
+Restrições da organização, permissions boundaries ou um deny explícito ainda
+podem bloquear a chamada. O projeto não cria usuários nem altera políticas IAM.
+
+### 3. Configurar um perfil AWS
+
+**Opção recomendada — IAM Identity Center (SSO), se disponível na sua conta:**
+
+```bash
+aws configure sso --profile sts-poc
+aws sso login --profile sts-poc
+```
+
+No assistente, informe a URL de acesso SSO e a região do Identity Center
+fornecidas pelo administrador; selecione a conta e a role autorizadas. Configure
+a região padrão dos serviços como `us-east-1` e a saída como `json`. A região
+do Identity Center pode ser diferente da região do Bedrock. Repita `aws sso login`
+quando a sessão expirar.
+[Guia oficial de configuração SSO](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sso.html).
+
+**Alternativa — perfil de usuário IAM, quando SSO não estiver disponível:**
+
+```bash
+aws configure --profile sts-poc
+```
+
+Informe a Access Key ID e a Secret Access Key **somente no prompt local da CLI**,
+a região `us-east-1` e a saída `json`. Não use chaves do usuário root. A CLI
+armazena o perfil fora do projeto, em `~/.aws/config` e `~/.aws/credentials`;
+nunca copie esses arquivos ou chaves para Git, `.env`, código ou configurações
+Xcode. Prefira credenciais temporárias quando possível. Não envie chaves pelo chat.
+
+**Se já houver um perfil configurado**, reutilize-o sem sobrescrever credenciais:
+
+```bash
+aws configure list-profiles
+```
+
+`sts-poc` é apenas o nome sugerido: ele só existe depois da configuração. Se
+usar `default`, substitua `sts-poc` por `default` nos comandos abaixo.
+
+### 4. Selecionar o perfil e verificar a identidade
+
+No terminal que iniciará a ponte:
+
+```bash
+export AWS_PROFILE=sts-poc
+export AWS_REGION=us-east-1
+export NOVA_MODEL_ID=amazon.nova-2-sonic-v1:0
+export NOVA_VOICE_ID=carolina
+aws sts get-caller-identity --profile "$AWS_PROFILE" --region "$AWS_REGION"
+```
+
+Confira se a conta e o usuário/role retornados são os esperados. Esse comando
+valida a autenticação, **não** a permissão de invocar o Nova. Variáveis exportadas
+valem apenas naquele terminal; `.env.example` é uma referência e não é carregado
+automaticamente. Evite variáveis AWS de credenciais conflitantes com o perfil.
+
+### 5. Iniciar a ponte e testar áudio real
+
+No mesmo terminal do passo anterior:
+
+```bash
+make nova-bridge
+```
+
+Deixe-o aberto. Em outro terminal, envie um WAV PT-BR mono PCM16 de 16 kHz:
+
+```bash
+make nova-smoke WAV=/absolute/path/sample-pt-br.wav
+```
+
+O smoke test usa a ponte já autenticada, recebe áudio falado e salva
+`/private/tmp/sts-nova-response.wav`. **Ele faz uma chamada real à AWS e gera
+cobrança do Bedrock.** Para testar também o gateway Go, siga a seção Stage 3
+abaixo; para ferramentas MCP, use `make mcp-gateway`. O `STS_DEVELOPMENT_TOKEN`
+é escolhido por você para proteger a conexão local e **não é uma credencial AWS**.
+Encerre a ponte e o gateway com Ctrl+C ao terminar.
+
+Problemas comuns:
+
+- Perfil inexistente: confira `aws configure list-profiles` e o `AWS_PROFILE`.
+- Credenciais ausentes/expiradas: configure o perfil ou renove o login SSO;
+  depois reinicie a ponte para abrir uma nova sessão autenticada.
+- `AccessDenied` ou falha de startup: confirme a identidade ativa, a política
+  mínima, a região e as restrições da conta/organização. A ponte expõe erros
+  sanitizados; eles podem não incluir a causa detalhada do Bedrock.
+- Não há áudio: confira o formato do WAV, a conexão de rede com o endpoint
+  Bedrock e a disponibilidade do modelo na região escolhida.
+
+Veja também [AWS setup](deploy/aws/README.md) e o
+[guia oficial do Nova 2 Sonic](https://docs.aws.amazon.com/nova/latest/nova2-userguide/sonic-getting-started.html).
+
 ## Local commands
 
 ```bash
@@ -52,6 +177,8 @@ Terminal 1 — private Python/Bedrock bridge:
 
 ```bash
 make nova-install
+export AWS_PROFILE=sts-poc # or the existing profile you configured above
+export AWS_REGION=us-east-1
 make nova-bridge
 ```
 
