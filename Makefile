@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 GOCACHE ?= /private/tmp/sts-go-cache
 NOVA_OUTPUT ?= /private/tmp/sts-nova-response.wav
 
-.PHONY: build test race gateway mcp fmt check nova-install nova-test nova-bridge nova-smoke
+.PHONY: build test race vet gateway mcp fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke
 
 build:
 	env GOCACHE=$(GOCACHE) go build ./...
@@ -13,6 +13,9 @@ test:
 race:
 	env GOCACHE=$(GOCACHE) go test -race ./...
 
+vet:
+	env GOCACHE=$(GOCACHE) go vet ./...
+
 gateway:
 	env GOCACHE=$(GOCACHE) go run ./cmd/gateway
 
@@ -22,7 +25,13 @@ mcp:
 fmt:
 	gofmt -w cmd internal tests
 
-check: build test race
+check: build test race vet
+
+voice-demo:
+	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client
+
+voice-cancel:
+	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -cancel-after 120ms
 
 nova-install:
 	python3.12 -m venv services/nova-bridge/.venv

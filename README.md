@@ -15,18 +15,38 @@ Nova 2 Sonic provides managed bidirectional inference through AWS Bedrock.
 ## Local commands
 
 ```bash
-cp .env.example .env
 make check
+export STS_PROVIDER=fake
+export STS_DEVELOPMENT_TOKEN=local-demo-token
 make gateway
 ```
 
-The default `fake` provider requires no external service. Runtime data and
-secrets are intentionally excluded from Git.
+In another terminal, export the same token, then run:
+
+```bash
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+make voice-demo
+make voice-cancel
+```
+
+The normal demo saves `/private/tmp/sts-fake-response.wav`. It is a 440 Hz
+tone, not speech: the fake provider does not perform ASR or call AWS. The
+cancellation demo discards its output. Use `go run ./cmd/voice-client -help`
+for an alternate URL, input WAV, or output path.
+
+Configuration comes from process environment variables. `.env.example` is a
+reference template; `.env` is **not automatically loaded**. Development may run
+without a token only on loopback. Non-loopback bindings and production require
+a token. Runtime data and secrets are intentionally excluded from Git.
+
+See [Voice protocol](docs/voice-protocol.md) for endpoints, event examples,
+limits, latency definitions, and the Stage 2 validation results.
 
 ## Repository layout
 
 - `apps/apple`: shared SwiftUI application for iOS and macOS.
 - `cmd/gateway`: public HTTP/WebSocket gateway.
+- `cmd/voice-client`: terminal demonstration and WAV capture.
 - `cmd/mcp-notes`: local MCP notes server.
 - `internal`: protocol, provider, orchestration, audio, and persistence code.
 - `services/nova-bridge`: local adapter for the AWS bidirectional SDK.
