@@ -46,6 +46,14 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
   metrics, terminal WAV demo, and concurrency tests. The user confirmed the
   terminal execution and accepted progression to Stage 3. No AWS calls were
   needed for Stage 2.
+- Stage 2 is merged into `main` and tagged `v0.3.0`.
+- Stage 3 is implemented on `stage/03-nova-e2e`: live continuous audio through
+  Go, final/speculative transcripts, native barge-in, stale-frame rejection,
+  explicit cancellation, tool-event mapping, and timed history-based renewal.
+  Two real AWS sessions passed (normal response and native speech interruption).
+  Session renewal was validated with compressed timers against a mock bridge,
+  not a real eight-minute soak. Stage 3 awaits user acceptance before merge/tag
+  `v0.4.0`; Apple microphone/playback validation remains in Stages 4–5.
 
 ## Acceptance targets
 

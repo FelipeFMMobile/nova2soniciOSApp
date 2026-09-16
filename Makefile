@@ -1,8 +1,10 @@
 SHELL := /bin/zsh
 GOCACHE ?= /private/tmp/sts-go-cache
 NOVA_OUTPUT ?= /private/tmp/sts-nova-response.wav
+NOVA_GATEWAY_OUTPUT ?= /private/tmp/sts-nova-gateway-response.wav
+NOVA_BARGE_OUTPUT ?= /private/tmp/sts-nova-gateway-barge-response.wav
 
-.PHONY: build test race vet gateway mcp fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke
+.PHONY: build test race vet gateway mcp fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke nova-demo nova-barge-demo
 
 build:
 	env GOCACHE=$(GOCACHE) go build ./...
@@ -45,3 +47,9 @@ nova-bridge:
 
 nova-smoke:
 	services/nova-bridge/.venv/bin/python tests/e2e/nova_realtime_smoke.py "$(WAV)" --output "$(NOVA_OUTPUT)"
+
+nova-demo:
+	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -provider nova -wav "$(WAV)" -output "$(NOVA_GATEWAY_OUTPUT)"
+
+nova-barge-demo:
+	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -provider nova -wav "$(WAV)" -barge-wav "$(BARGE_WAV)" -output "$(NOVA_BARGE_OUTPUT)"
