@@ -108,6 +108,28 @@ class NovaSessionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await session.send_audio("not-base64")
 
+    async def test_tools_auto_choice_and_correlated_result(self) -> None:
+        FakeClient.stream = FakeStream()
+        session = NovaSession("us-east-1", "amazon.nova-2-sonic-v1:0", "carolina", "PT-BR", self._ignore)
+        tools = [{"toolSpec": {"name": "notes_list", "description": "Busca notas", "inputSchema": {"json": {"type": "object"}}}}]
+        with (
+            patch("nova_bridge.session.BedrockRuntimeClient", FakeClient),
+            patch("nova_bridge.session.boto3.Session", FakeBotoSession),
+        ):
+            await session.start(tools=tools)
+            events = FakeClient.stream.input_stream.events
+            config = events[1]["event"]["promptStart"]["toolConfiguration"]
+            self.assertEqual(config["toolChoice"], {"auto": {}})
+            self.assertEqual(config["tools"], tools)
+            await session.send_tool_result("tool-unique-1", '{"status":"ok"}')
+            start = events[-3]["event"]["contentStart"]
+            result = events[-2]["event"]["toolResult"]
+            end = events[-1]["event"]["contentEnd"]
+            self.assertEqual(start["toolResultInputConfiguration"]["toolUseId"], "tool-unique-1")
+            self.assertEqual(start["contentName"], result["contentName"])
+            self.assertEqual(result["contentName"], end["contentName"])
+            await session.close()
+
     async def _ignore(self, event) -> None:
         return None
 
