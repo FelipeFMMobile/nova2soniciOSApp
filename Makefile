@@ -9,6 +9,16 @@ APPLE_SIMULATOR_ID ?= 599499E4-DD38-4C6C-9459-D4FDA8B2AE43
 
 .PHONY: build test race vet gateway mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke nova-demo nova-barge-demo
 .PHONY: apple-core-test apple-build-macos apple-build-ios apple-ui-test
+.PHONY: dev dev-plan dev-test
+
+dev:
+	python3 scripts/dev.py
+
+dev-plan:
+	python3 scripts/dev.py --dry-run
+
+dev-test:
+	python3 -m unittest discover -s tests/scripts -v
 
 apple-core-test:
 	swift test --package-path apps/apple/VoiceCore --scratch-path $(APPLE_BUILD_ROOT)-core

@@ -14,6 +14,60 @@ Nova 2 Sonic provides managed bidirectional inference through AWS Bedrock.
 
 ## Configurar o ambiente para conectar à AWS
 
+### Assistente de autoatendimento — um terminal
+
+```bash
+cd /Users/felipemenezes/Codes/AIproj/StsModel
+make dev
+```
+
+O assistente pergunta:
+
+1. Fake (sem AWS/microfone/MCPs) ou Nova 2 Sonic.
+2. Perfil AWS existente, com `TerraformUser` como padrão para Nova.
+3. MCPs: nenhum, Notes, Agenda ou ambos.
+4. Se deseja dados fictícios na Agenda (padrão: não).
+5. Mac/Simulator (loopback) ou iPhone físico (rede local, com confirmação).
+6. Token local: digite um ou pressione Enter para gerar um token forte.
+
+Após o resumo e sua confirmação, verifica ferramentas/portas, autenticação AWS
+(Nova), compila os binários e inicia bridge + gateway supervisionados no mesmo
+terminal. Se faltar o ambiente Python, oferece instalar com `make nova-install`.
+Não cria perfis/recursos AWS nem altera IAM. Credenciais AWS não são salvas pelo
+assistente; somente o perfil selecionado é utilizado. Conversas Nova têm custos
+Bedrock; a checagem de prontidão não inicia inferência.
+
+Ao ficar pronto, mostra URL, provider e token para preencher no app. No iPhone,
+substitua `IP-DO-MAC` pelo IP do Mac na mesma rede. `ws://` não criptografa
+voz/token: habilite rede local somente em Wi-Fi privado confiável. A bridge
+permanece em `127.0.0.1:8091` mesmo nesse modo.
+
+`Ctrl+C` encerra somente os processos iniciados pelo assistente, incluindo os
+MCPs filhos. Se um serviço cair, ele encerra os demais e informa onde estão os
+logs. Portas ocupadas são rejeitadas: não mata nem reaproveita processos
+existentes. Bancos persistem em `data/`; logs privados em `logs/dev/`, ambos
+ignorados pelo Git. Configurações `STS_*`/`NOVA_*` herdadas são descartadas para
+não ativar MCPs ou captura de evidência sem sua escolha. Cada execução preserva
+os aliases/políticas do exemplo MCP. Fixtures opt-in usam a reunião fictícia de
+16/05/2030, 10–11h; nenhum banco é apagado.
+
+Para conferir as escolhas sem autenticar, instalar, compilar ou iniciar:
+
+```bash
+make dev-plan
+```
+
+Testes do assistente: `make dev-test`. Para incluir startup/cleanup reais do
+gateway fake, sem AWS: `STS_DEV_E2E=1 make dev-test`.
+O teste de integração usa uma porta livre temporária para não interferir em um
+gateway já rodando. Para iniciar outro ambiente em portas diferentes:
+
+```bash
+python3 scripts/dev.py --gateway-port 8082 --bridge-port 8092
+```
+
+Os comandos manuais abaixo continuam disponíveis para diagnóstico.
+
 ### Início rápido — perfil existente `TerraformUser`
 
 Se as dependências e permissões IAM já estão configuradas, use diretamente os
