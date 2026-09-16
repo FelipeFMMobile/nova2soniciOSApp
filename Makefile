@@ -1,7 +1,8 @@
 SHELL := /bin/zsh
 GOCACHE ?= /private/tmp/sts-go-cache
+NOVA_OUTPUT ?= /private/tmp/sts-nova-response.wav
 
-.PHONY: build test race gateway mcp fmt check
+.PHONY: build test race gateway mcp fmt check nova-install nova-test nova-bridge nova-smoke
 
 build:
 	env GOCACHE=$(GOCACHE) go build ./...
@@ -23,3 +24,15 @@ fmt:
 
 check: build test race
 
+nova-install:
+	python3.12 -m venv services/nova-bridge/.venv
+	services/nova-bridge/.venv/bin/pip install -r services/nova-bridge/requirements.txt
+
+nova-test:
+	PYTHONPATH=services/nova-bridge services/nova-bridge/.venv/bin/python -m unittest discover -s tests/python -v
+
+nova-bridge:
+	PYTHONPATH=services/nova-bridge services/nova-bridge/.venv/bin/python -m nova_bridge.server
+
+nova-smoke:
+	services/nova-bridge/.venv/bin/python tests/e2e/nova_realtime_smoke.py "$(WAV)" --output "$(NOVA_OUTPUT)"

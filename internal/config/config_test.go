@@ -18,13 +18,25 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
-func TestQwenRequiresEndpointAndKey(t *testing.T) {
+func TestRejectsUnsupportedProvider(t *testing.T) {
 	t.Setenv("STS_ENV", "development")
 	t.Setenv("STS_PROVIDER", "qwen")
-	t.Setenv("STS_QWEN_REALTIME_URL", "")
-	t.Setenv("STS_QWEN_API_KEY", "")
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() expected an error")
+	}
+}
+
+func TestNovaUsesLocalBridgeByDefault(t *testing.T) {
+	t.Setenv("STS_ENV", "development")
+	t.Setenv("STS_PROVIDER", "nova")
+	t.Setenv("STS_NOVA_BRIDGE_URL", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.NovaBridgeURL != "ws://127.0.0.1:8091" {
+		t.Fatalf("NovaBridgeURL = %q", cfg.NovaBridgeURL)
 	}
 }

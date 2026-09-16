@@ -22,9 +22,11 @@ xcuserdata/
 *.pcm
 *.caf
 /models/
+.venv/
+__pycache__/
+*.pyc
 
 # macOS and editors
 .DS_Store
 .idea/
 .vscode/
-

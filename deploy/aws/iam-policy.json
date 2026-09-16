@@ -1,0 +1,12 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeNova2SonicBidirectionalStream",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModelWithBidirectionalStream",
+      "Resource": "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-2-sonic-v1:0"
+    }
+  ]
+}
+
