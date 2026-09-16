@@ -59,13 +59,14 @@ func TestHistoryContainsOnlyFinalSpeech(t *testing.T) {
 	m := NewMapper(nil)
 	m.StartInput("a")
 	user(t, m, "u", "Pergunta")
+	user(t, m, "u-fragment", "complemento")
 	for _, stage := range []string{"SPECULATIVE", "FINAL"} {
 		id := stage
 		mapped(t, m, Event{Kind: "contentStart", ContentID: id, Type: "TEXT", Role: "ASSISTANT", Stage: stage})
 		mapped(t, m, Event{Kind: "textOutput", ContentID: id, Text: stage})
 		mapped(t, m, Event{Kind: "contentEnd", ContentID: id, StopReason: "END_TURN"})
 	}
-	if len(m.History) != 2 || m.History[1].Content != "FINAL" {
+	if len(m.History) != 2 || m.History[1].Content != "FINAL" || m.History[0].Content != "Pergunta complemento" {
 		t.Fatal(m.History)
 	}
 }

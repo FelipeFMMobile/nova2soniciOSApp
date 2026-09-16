@@ -19,6 +19,7 @@ const (
 	SessionState     = "session.state"
 	SessionStop      = "session.stop"
 	SessionStopped   = "session.stopped"
+	SessionRenewed   = "session.renewed"
 	AudioAppend      = "audio.append"
 	TurnCommit       = "turn.commit"
 	TurnCancel       = "turn.cancel"

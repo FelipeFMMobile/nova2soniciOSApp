@@ -40,8 +40,14 @@ type Server struct {
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
-	if cfg.Provider != "fake" {
-		return nil, fmt.Errorf("provider %q is not implemented in Stage 2; use STS_PROVIDER=fake (Nova adapter: Stage 3)", cfg.Provider)
+	if cfg.Provider != "fake" && cfg.Provider != "nova" {
+		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
+	}
+	if cfg.NovaMaxSessionAge == 0 {
+		cfg.NovaMaxSessionAge = 7*time.Minute + 30*time.Second
+	}
+	if cfg.Provider == "nova" && (cfg.NovaBridgeURL == "" || cfg.NovaMaxSessionAge <= 0) {
+		return nil, fmt.Errorf("Nova requires a bridge URL and positive session age")
 	}
 	if cfg.MaxSessions <= 0 || cfg.MaxEventBytes <= 0 || cfg.ReadTimeout <= 0 || cfg.WriteTimeout <= 0 || cfg.IdleTimeout < time.Millisecond || cfg.TurnTimeout <= 0 {
 		return nil, fmt.Errorf("gateway limits and timeouts must be positive")
@@ -80,9 +86,9 @@ func (s *Server) authorize(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) providers(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"selected": s.voice.ID(), "providers": []map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{"selected": s.cfg.Provider, "providers": []map[string]any{
 		{"id": "fake", "available": true, "speech": false, "inputSampleRate": 16000, "outputSampleRate": 24000},
-		{"id": "nova", "available": false, "reason": "Go Nova adapter is scheduled for Stage 3"},
+		{"id": "nova", "available": true, "speech": true, "inputSampleRate": 16000, "outputSampleRate": 24000, "requires": "local Nova bridge and AWS Bedrock authorization"},
 	}})
 }
 

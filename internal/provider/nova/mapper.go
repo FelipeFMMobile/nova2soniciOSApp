@@ -47,7 +47,8 @@ func (m *Mapper) StartInput(id string) []protocol.Event {
 	m.waitingUser = true
 	return append(events, protocol.Event{Type: protocol.TurnStarted, TurnID: id}, m.state())
 }
-func (m *Mapper) Commit() { m.started = time.Now() }
+func (m *Mapper) Commit()                 { m.started = time.Now() }
+func (m *Mapper) FirstAudioMicros() int64 { return m.firstAudio.Microseconds() }
 func (m *Mapper) state() protocol.Event {
 	return protocol.Event{Type: protocol.SessionState, TurnID: m.TurnID, State: m.State}
 }
@@ -67,6 +68,9 @@ func (m *Mapper) Map(e Event) ([]protocol.Event, error) {
 	}
 	if e.Kind == "interrupted" {
 		return m.Interrupt(), nil
+	}
+	if e.Kind == "completionEnd" && e.StopReason == "END_TURN" && m.State == session.Responding && m.sequence > 0 {
+		return m.complete(), nil
 	}
 	if e.Kind == "contentStart" {
 		if e.Role == "USER" {
@@ -139,6 +143,12 @@ func (m *Mapper) Map(e Event) ([]protocol.Event, error) {
 		}
 		if c.kind == "TEXT" && c.stage == "FINAL" {
 			if c.role == "USER" {
+				if previous := m.users[c.turn]; previous != "" {
+					c.text = previous + " " + c.text
+				}
+				if len(c.text) > 8192 {
+					return nil, fmt.Errorf("Nova user transcript limit reached")
+				}
 				m.users[c.turn] = c.text
 			} else if c.role == "ASSISTANT" && m.users[c.turn] != "" {
 				m.History = append(m.History, HistoryMessage{Role: "USER", Content: m.users[c.turn]}, HistoryMessage{Role: "ASSISTANT", Content: c.text})
@@ -147,14 +157,21 @@ func (m *Mapper) Map(e Event) ([]protocol.Event, error) {
 				}
 				delete(m.users, c.turn)
 			}
+			if c.role == "ASSISTANT" && e.StopReason == "END_TURN" && m.State == session.Responding && m.sequence > 0 {
+				return m.complete(), nil
+			}
 		}
 		if c.kind == "AUDIO" && e.StopReason == "END_TURN" && m.State == session.Responding {
-			m.State = session.Idle
-			m.answered[c.turn] = true
-			return []protocol.Event{{Type: protocol.TurnCompleted, TurnID: c.turn, Metrics: &protocol.Metrics{FirstAudioMS: float64(m.firstAudio.Microseconds()) / 1000, DurationMS: float64(time.Since(m.started).Microseconds()) / 1000}}, m.state()}, nil
+			return m.complete(), nil
 		}
 	}
 	return nil, nil
+}
+
+func (m *Mapper) complete() []protocol.Event {
+	m.State = session.Idle
+	m.answered[m.TurnID] = true
+	return []protocol.Event{{Type: protocol.TurnCompleted, TurnID: m.TurnID, Metrics: &protocol.Metrics{FirstAudioMS: float64(m.firstAudio.Microseconds()) / 1000, DurationMS: float64(time.Since(m.started).Microseconds()) / 1000}}, m.state()}
 }
 
 func historyBytes(messages []HistoryMessage) int {
