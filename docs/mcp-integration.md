@@ -1,8 +1,9 @@
 # Nova 2 Sonic + local MCP — Stage 6
 
 Stage 6 runs before the Apple apps. It is implemented on `stage/06-mcp-notes`,
-pending user acceptance and merge/tag `v0.5.0`. Stage 3 was accepted and merged
-as `v0.4.0`. Nothing has been pushed remotely.
+accepted by the user for merge/tag `v0.5.0`. Stage 3 was accepted and merged
+as `v0.4.0`. GitHub publication was authorized; the destination is configured
+separately from the local implementation.
 
 ## What the model can do
 

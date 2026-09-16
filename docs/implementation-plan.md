@@ -65,7 +65,8 @@ Every stage uses a dedicated branch, small commits, a clean test gate, a
   execution, and terminal follow-ups/event capture. Live AWS create, retrieval
   in a fresh conversation, durable retry, refusal, confirmed deletion and empty
   post-delete query passed. See [MCP integration](mcp-integration.md).
-  Stage 6 awaits user acceptance before merge/tag `v0.5.0`.
+  The user accepted Stage 6 and authorized its `--no-ff` merge and annotated
+  release tag `v0.5.0`, followed by publication to their GitHub repository.
 
 ## Next priority: MCP before Apple apps
 
