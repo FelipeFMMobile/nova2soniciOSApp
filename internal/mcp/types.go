@@ -33,6 +33,17 @@ func Failure(code string) Result {
 	return TextResult(map[string]string{"status": "error", "code": code}, true)
 }
 
+func Status(r Result) string {
+	if len(r.Content) == 0 {
+		return ""
+	}
+	var value struct {
+		Status string `json:"status"`
+	}
+	_ = json.Unmarshal([]byte(r.Content[0].Text), &value)
+	return value.Status
+}
+
 type noRemote struct{}
 
 func (noRemote) Load(string) (any, error) {

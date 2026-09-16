@@ -48,3 +48,33 @@ func TestDurableRetries(t *testing.T) {
 		t.Fatal(notes, err)
 	}
 }
+
+func TestSessionAuditKeepsUncertainOutcomes(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "audit.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if err = s.StartSession(ctx, "session-1", "request-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecordTurn(ctx, "session-1", "turn-1", "turn.started"); err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []string{"running", "confirmation_required", "completed"} {
+		if err = s.RecordTool(ctx, "session-1", state, "turn-1", "notes.delete", "retry-key", state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = s.EndSession(ctx, "session-1"); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{"running": "outcome_unknown", "confirmation_required": "cancelled", "completed": "completed"} {
+		var got string
+		err = s.db.QueryRow(`SELECT state FROM tool_operations WHERE id=?`, id).Scan(&got)
+		if err != nil || got != want {
+			t.Fatal(id, got, err)
+		}
+	}
+}

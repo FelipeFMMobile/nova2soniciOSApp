@@ -111,7 +111,7 @@ class NovaSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_tools_auto_choice_and_correlated_result(self) -> None:
         FakeClient.stream = FakeStream()
         session = NovaSession("us-east-1", "amazon.nova-2-sonic-v1:0", "carolina", "PT-BR", self._ignore)
-        tools = [{"toolSpec": {"name": "notes_list", "description": "Busca notas", "inputSchema": {"json": {"type": "object"}}}}]
+        tools = [{"toolSpec": {"name": "notes_list", "description": "Busca notas", "inputSchema": {"json": '{"type":"object"}'}}}]
         with (
             patch("nova_bridge.session.BedrockRuntimeClient", FakeClient),
             patch("nova_bridge.session.boto3.Session", FakeBotoSession),

@@ -47,7 +47,11 @@ func Open(path string) (*Store, error) {
 CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS operations (key TEXT PRIMARY KEY, name TEXT NOT NULL, arguments TEXT NOT NULL, result TEXT NOT NULL, completed_at TEXT NOT NULL);
-INSERT OR IGNORE INTO schema_migrations VALUES (1);`)
+CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT);
+CREATE TABLE IF NOT EXISTS turns (session_id TEXT NOT NULL, id TEXT NOT NULL, state TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(session_id,id));
+CREATE TABLE IF NOT EXISTS tool_operations (session_id TEXT NOT NULL, id TEXT NOT NULL, turn_id TEXT NOT NULL, name TEXT NOT NULL, retry_key TEXT NOT NULL, state TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(session_id,id));
+INSERT OR IGNORE INTO schema_migrations VALUES (1);
+INSERT OR IGNORE INTO schema_migrations VALUES (2);`)
 	if err != nil {
 		db.Close()
 		return nil, err

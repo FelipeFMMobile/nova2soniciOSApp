@@ -22,6 +22,7 @@ xcuserdata/
 *.wav
 *.pcm
 *.caf
+*.jsonl
 /models/
 .venv/
 __pycache__/

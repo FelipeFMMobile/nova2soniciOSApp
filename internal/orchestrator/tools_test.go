@@ -114,6 +114,10 @@ func TestValidationIdempotencyAndFreshReads(t *testing.T) {
 	if r == nil || !r.IsError {
 		t.Fatal("tool ID conflict accepted")
 	}
+	_, r = s.Plan("reformulated-retry", "notes_create", "turn-3", json.RawMessage(`{"title":"a","content":"different wording"}`))
+	if r == nil || !r.IsError {
+		t.Fatal("logical request allowed a second creation")
+	}
 	for i := 0; i < 2; i++ {
 		j, r := s.Plan("read", "notes_list", "turn-2", json.RawMessage(`{}`))
 		if r != nil {

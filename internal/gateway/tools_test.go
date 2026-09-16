@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/gorilla/websocket"
+	"os"
+	"path/filepath"
 	"stsmodel.local/poc/internal/mcp"
 	"stsmodel.local/poc/internal/orchestrator"
 	"stsmodel.local/poc/internal/protocol"
+	"stsmodel.local/poc/internal/storage"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -50,7 +53,7 @@ func waitTool(c *websocket.Conn) map[string]any {
 func userPhrase(c *websocket.Conn, id, text string) {
 	_ = rawEvent(c, "contentStart", map[string]any{"contentId": id, "type": "TEXT", "role": "USER", "additionalModelFields": `{"generationStage":"FINAL"}`})
 	_ = rawEvent(c, "textOutput", map[string]any{"contentId": id, "content": text})
-	_ = rawEvent(c, "contentEnd", map[string]any{"contentId": id, "stopReason": "END_TURN"})
+	_ = rawEvent(c, "contentEnd", map[string]any{"contentId": id, "stopReason": "PARTIAL_TURN"})
 }
 func TestNovaDiscoversAndExecutesMCP(t *testing.T) {
 	seen := make(chan map[string]any, 1)
@@ -176,4 +179,90 @@ func TestNovaToolTimeoutReturnsFailure(t *testing.T) {
 		t.Fatal("timeout claimed success", event)
 	}
 	until(t, c, protocol.TurnCompleted)
+}
+
+func TestGatewayMCPHelper(t *testing.T) {
+	if os.Getenv("STS_GATEWAY_MCP_HELPER") != "1" {
+		return
+	}
+	s, err := storage.Open(os.Getenv("STS_GATEWAY_MCP_DB"))
+	if err != nil {
+		os.Exit(2)
+	}
+	err = mcp.Serve(context.Background(), os.Stdin, os.Stdout, s)
+	s.Close()
+	if err != nil {
+		os.Exit(3)
+	}
+	os.Exit(0)
+}
+
+func TestGatewayRealStdioSQLiteRetryAcrossSessions(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "notes.sqlite")
+	t.Setenv("STS_GATEWAY_MCP_HELPER", "1")
+	t.Setenv("STS_GATEWAY_MCP_DB", db)
+	url := bridge(t, func(c *websocket.Conn, start map[string]any) {
+		tools, ok := start["tools"].([]any)
+		if !ok || len(tools) != 1 {
+			t.Error("no MCP tools advertised")
+			return
+		}
+		spec := tools[0].(map[string]any)["toolSpec"].(map[string]any)
+		schema, ok := spec["inputSchema"].(map[string]any)["json"].(string)
+		if !ok || !json.Valid([]byte(schema)) {
+			t.Error("Bedrock wire schema must be encoded JSON string")
+			return
+		}
+		var input map[string]any
+		if c.ReadJSON(&input) != nil {
+			return
+		}
+		nativeUser(c, "user-1")
+		nativeTool(c, "create-1", "notes_create", `{"title":"Durável","content":"valor único 8426"}`)
+		if waitTool(c) == nil {
+			return
+		}
+		nativeAudio(c, "answer-1")
+		_ = rawEvent(c, "contentEnd", map[string]any{"contentId": "answer-1", "stopReason": "END_TURN"})
+		for c.ReadJSON(&input) == nil {
+		}
+	})
+	cfg := testConfig()
+	cfg.Provider = "nova"
+	cfg.NovaBridgeURL = url
+	cfg.DatabasePath = db
+	cfg.MCPCommand = os.Args[0]
+	cfg.MCPArgs = []string{"-test.run=^TestGatewayMCPHelper$"}
+	cfg.MCPAllowedTools = []string{"notes.create"}
+	_, _, ws := setup(t, cfg)
+	var original string
+	for i := 0; i < 2; i++ {
+		c := dial(t, ws, "")
+		send(t, c, protocol.Event{Type: protocol.SessionStart, Provider: "nova", RequestID: "same-logical-request"})
+		sid := until(t, c, protocol.SessionReady).SessionID
+		send(t, c, protocol.Event{Type: protocol.AudioAppend, SessionID: sid, TurnID: "input-1", Sequence: 1, SampleRate: 16000, Audio: "AAAAAA=="})
+		e := until(t, c, protocol.ToolResult)
+		var result mcp.Result
+		if json.Unmarshal(e.Tool.Result, &result) != nil || result.IsError {
+			t.Fatal(e)
+		}
+		if i == 0 {
+			original = result.Content[0].Text
+		} else if result.Content[0].Text != original {
+			t.Fatal("retry did not replay durable result")
+		}
+		until(t, c, protocol.TurnCompleted)
+		send(t, c, protocol.Event{Type: protocol.SessionStop, SessionID: sid})
+		until(t, c, protocol.SessionStopped)
+		c.Close()
+	}
+	s, err := storage.Open(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	notes, err := s.List(context.Background(), "8426")
+	if err != nil || len(notes) != 1 {
+		t.Fatal(notes, err)
+	}
 }

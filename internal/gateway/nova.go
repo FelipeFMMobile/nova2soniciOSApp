@@ -54,7 +54,7 @@ func (s *Server) runNova(ctx context.Context, conn *websocket.Conn, in <-chan in
 	}
 started:
 	startDeadline.Stop()
-	tools, err := s.openTools(ctx, namespace)
+	tools, err := s.openTools(ctx, namespace, sessionID)
 	if err != nil {
 		sendError("mcp_unavailable", "MCP initialization or discovery failed")
 		return
@@ -94,6 +94,10 @@ started:
 	completedUserTurn := ""
 	emit := func(events []protocol.Event) bool {
 		for _, event := range events {
+			if tools.turn(event) != nil {
+				sendError("storage_failed", "cannot persist turn lifecycle")
+				return false
+			}
 			if event.Type == protocol.SessionState && event.State == session.Responding && turnTimeout == nil {
 				turnTimer.Reset(s.cfg.TurnTimeout)
 				turnTimeout = turnTimer.C
@@ -247,6 +251,14 @@ started:
 		case finished := <-toolResults:
 			delete(tools.active, finished.job.ID)
 			tools.session.Complete(finished.job, finished.result)
+			state := "completed"
+			if finished.result.IsError {
+				state = "failed_or_unknown"
+			}
+			if tools.record(finished.job, state) != nil {
+				sendError("storage_failed", "tool outcome could not be recorded; retry with the same requestId")
+				return
+			}
 			if stream.SendToolResult(finished.job.ID, finished.result) != nil {
 				sendError("provider_unavailable", "Nova tool result delivery failed; retry mutations with the same requestId")
 				return
@@ -286,12 +298,14 @@ started:
 							completedUserTurn = turn
 						}
 						completedUser = strings.TrimSpace(completedUser + " " + text)
-						if event.StopReason == "END_TURN" {
-							tools.session.ObserveUser(turn, completedUser)
-						}
+						// USER ASR content commonly ends with PARTIAL_TURN. The
+						// subsequent TOOL/ASSISTANT content is the utterance boundary.
 						delete(userTexts, event.ContentID)
 						delete(userTurns, event.ContentID)
 					}
+				}
+				if event.Kind == "contentStart" && event.Role != "USER" && completedUserTurn != "" && len(userTexts) == 0 {
+					tools.session.ObserveUser(completedUserTurn, completedUser)
 				}
 				if event.Kind == "toolUse" {
 					if len(tools.staged) >= 32 {
@@ -303,6 +317,9 @@ started:
 							tools.staged[event.ContentID] = e
 						}
 					}
+					if _, ok := tools.staged[event.ContentID]; !ok {
+						tools.staged[event.ContentID] = protocol.Event{Type: protocol.ToolStarted, TurnID: mapper.TurnID, Code: "turn_cancelled", Tool: &protocol.Tool{OperationID: event.ToolID, Name: event.ToolName, Arguments: event.ToolArguments}}
+					}
 					events = nil // Execute only after Nova closes its TOOL content.
 				}
 				if event.Kind == "contentEnd" {
@@ -311,7 +328,15 @@ started:
 						if tools.active[call.Tool.OperationID] {
 							continue
 						}
-						job, immediate := tools.session.Plan(call.Tool.OperationID, call.Tool.Name, call.TurnID, call.Tool.Arguments)
+						var job orchestrator.Job
+						var immediate *mcp.Result
+						if call.Code == "turn_cancelled" || call.TurnID != mapper.TurnID {
+							job = orchestrator.Job{ID: call.Tool.OperationID, Name: call.Tool.Name, TurnID: call.TurnID}
+							r := mcp.Failure("turn_cancelled")
+							immediate = &r
+						} else {
+							job, immediate = tools.session.Plan(call.Tool.OperationID, call.Tool.Name, call.TurnID, call.Tool.Arguments)
+						}
 						if !emit([]protocol.Event{call}) {
 							return
 						}
@@ -320,6 +345,17 @@ started:
 							immediate = &r
 						}
 						if immediate != nil {
+							state := "rejected"
+							if !immediate.IsError {
+								state = "replayed"
+								if mcp.Status(*immediate) == "confirmation_required" {
+									state = "confirmation_required"
+								}
+							}
+							if tools.record(job, state) != nil {
+								sendError("storage_failed", "cannot persist tool decision")
+								return
+							}
 							if stream.SendToolResult(job.ID, *immediate) != nil {
 								sendError("provider_unavailable", "Nova tool result delivery failed")
 								return
@@ -333,6 +369,10 @@ started:
 								}
 							}
 						} else {
+							if tools.record(job, "running") != nil {
+								sendError("storage_failed", "cannot persist tool operation; no action executed")
+								return
+							}
 							tools.start(job, func(parent context.Context, j orchestrator.Job) mcp.Result {
 								deadline, cancel := context.WithTimeout(parent, s.cfg.MCPTimeout)
 								defer cancel()

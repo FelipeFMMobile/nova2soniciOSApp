@@ -80,7 +80,9 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 		if tool.Name != "notes.list" && tool.Name != "notes.create" {
 			description += " Esta ação exige confirmação do usuário em um turno posterior. Se receber confirmation_required, peça confirmo excluir (notas) ou confirmo executar, depois chame novamente com os mesmos argumentos."
 		}
-		s.Specs = append(s.Specs, map[string]any{"toolSpec": map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"json": tool.InputSchema}}})
+		// Bedrock's bidirectional wire format requires a JSON-encoded string,
+		// unlike MCP's inputSchema object (and some simplified AWS examples).
+		s.Specs = append(s.Specs, map[string]any{"toolSpec": map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"json": string(tool.InputSchema)}}})
 	}
 	if len(s.Specs) == 0 {
 		return nil, errors.New("no allowed MCP tools discovered")
@@ -165,6 +167,9 @@ func (s *Session) Execute(ctx context.Context, j Job) mcp.Result {
 	}
 	// This POC feeds only bounded text results to Nova, not binary resources.
 	encoded, _ := json.Marshal(result)
+	if len(result.Content) == 0 || len(result.Content) > 16 {
+		return mcp.Failure("invalid_result_content")
+	}
 	if len(encoded) > 65536 {
 		return mcp.Failure("result_too_large")
 	}
@@ -226,7 +231,7 @@ func (s *Session) ObserveUser(turn, text string) bool {
 		p.Approved = true
 		return true
 	}
-	if phrase == "nao" || phrase == "cancela" || phrase == "cancelar" || phrase == "nao confirmo" || phrase == "nao exclua" {
+	if phrase == "nao" || strings.HasPrefix(phrase, "nao ") || phrase == "cancela" || phrase == "cancelar" || phrase == "cancele" {
 		s.Pending = nil
 	}
 	return false
