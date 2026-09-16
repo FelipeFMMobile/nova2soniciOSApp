@@ -1,0 +1,25 @@
+[
+  {
+    "alias": "memo",
+    "command": "/absolute/path/StsModel/bin/mcp-notes",
+    "args": ["-db", "/absolute/path/StsModel/data/sts.sqlite"],
+    "allowed_tools": ["notes.create", "notes.list", "notes.delete"],
+    "policies": {
+      "notes.create": "explicit_intent",
+      "notes.list": "read_only",
+      "notes.delete": "confirm_later"
+    }
+  },
+  {
+    "alias": "local",
+    "command": "/absolute/path/StsModel/bin/mcp-agenda",
+    "args": ["-db", "/absolute/path/StsModel/data/agenda.sqlite", "-fixtures"],
+    "allowed_tools": ["agenda.list_slots", "agenda.list_events", "agenda.create_event", "agenda.cancel_event"],
+    "policies": {
+      "agenda.list_slots": "read_only",
+      "agenda.list_events": "read_only",
+      "agenda.create_event": "explicit_intent",
+      "agenda.cancel_event": "confirm_later"
+    }
+  }
+]

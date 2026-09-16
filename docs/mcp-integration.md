@@ -109,7 +109,9 @@ The command is never supplied by the model and is executed directly, without
 a shell. A server must support the pinned handshake and text tools subset.
 Unknown non-notes tools require confirmation with “confirmo executar” by
 default, regardless of the server's untrusted `readOnlyHint` annotation. This
-is conservative; per-tool policies/multiple servers are future work.
+is conservative. The additional [Notes + Agenda stage](multi-mcp-agenda.md)
+implements explicit host policies and multiple servers while preserving this
+legacy configuration.
 Configured subprocesses are trusted local code, **not sandboxed**: they inherit
 the host process environment and OS user permissions. Review before configuring.
 Generic servers may ignore the host retry metadata; the no-duplicate guarantee

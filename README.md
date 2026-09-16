@@ -237,3 +237,8 @@ See [MCP setup, safety and live results](docs/mcp-integration.md).
 
 See [Architecture](docs/architecture.md) for responsibilities and trust
 boundaries.
+
+The additional pre-Apple stage supports two simultaneous stdio MCPs, Notes and
+a fictitious local SQLite Agenda. See [configuration, local tests and PT-BR AWS
+acceptance script](docs/multi-mcp-agenda.md). Nova real validation for this stage
+awaits authorization; mock tests establish host routing only.
