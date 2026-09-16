@@ -14,6 +14,96 @@ Nova 2 Sonic provides managed bidirectional inference through AWS Bedrock.
 
 ## Configurar o ambiente para conectar à AWS
 
+### Início rápido — perfil existente `TerraformUser`
+
+Se as dependências e permissões IAM já estão configuradas, use diretamente os
+dois blocos abaixo. Não é necessário criar outro perfil nem executar
+`aws configure` novamente. Se faltar o ambiente Python, execute
+`make nova-install` uma vez na raiz do projeto.
+
+**Terminal 1 — ponte privada com a AWS:**
+
+```bash
+cd /Users/felipemenezes/Codes/AIproj/StsModel
+
+export AWS_PROFILE=TerraformUser
+export AWS_REGION=us-east-1
+export NOVA_MODEL_ID=amazon.nova-2-sonic-v1:0
+export NOVA_VOICE_ID=carolina
+
+aws sts get-caller-identity --profile TerraformUser --region us-east-1
+make nova-bridge
+```
+
+Confira a identidade retornada antes de iniciar a ponte. O comando STS verifica
+autenticação, **não** a permissão de invocar o Nova. A ponte deve informar que
+está ouvindo em `ws://127.0.0.1:8091`; deixe o processo rodando.
+
+**Terminal 2 — gateway Go para o app:**
+
+```bash
+cd /Users/felipemenezes/Codes/AIproj/StsModel
+
+export STS_PROVIDER=nova
+export STS_NOVA_BRIDGE_URL=ws://127.0.0.1:8091
+export STS_GATEWAY_ADDRESS=127.0.0.1:8080
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+
+make gateway
+```
+
+O gateway deve informar que está ouvindo em `127.0.0.1:8080`, com provider
+`nova`. No app macOS ou iOS Simulator, abra **Conexão local** e informe:
+
+- URL: `ws://127.0.0.1:8080/v1/voice`
+- Token: `local-demo-token` (token de desenvolvimento local, não uma chave AWS)
+- Provider: **Nova 2 Sonic**
+
+Toque **Iniciar conversa**, permita o microfone e fale em PT-BR. Esse início
+rápido não configura ferramentas MCP: para Notes + Agenda, configure
+`STS_MCP_SERVERS` no terminal 2 antes de `make gateway`, conforme a seção
+**Consultar Notes e Agenda na mesma conversa** mais abaixo. Variáveis já exportadas
+nesse terminal continuam valendo; use uma nova aba para um ambiente sem MCPs.
+
+No iPhone físico, `127.0.0.1` não aponta ao Mac. Veja o
+[guia do app](docs/apple-app.md#iphone-físico--etapa-5) para rede local,
+assinatura e requisitos de versão do iOS.
+
+**Encerrar:** primeiro encerre a conversa no app; depois pressione `Ctrl+C` nos
+dois terminais. Subir os processos apenas os deixa ouvindo localmente; a sessão
+Bedrock é aberta ao iniciar a conversa Nova e gera custos de uso. Mantenha a
+ponte privada em loopback, sem expor sua porta à rede.
+
+### Por que gateway + bridge? Por que dois terminais?
+
+O fluxo desta implementação é:
+
+```text
+App SwiftUI → gateway Go (:8080) → bridge Python (:8091) → AWS Bedrock / Nova
+                     ↕
+             MCP Notes + Agenda / SQLite
+```
+
+- **Gateway Go:** protocolo do app, sessões, validação, permissões, execução
+  das ferramentas MCP e persistência. Não recebe as chaves AWS do app.
+- **Bridge Python:** adaptador de transporte. Usa o SDK
+  `aws_sdk_bedrock_runtime` para abrir `InvokeModelWithBidirectionalStream`,
+  autenticar com o perfil AWS e transportar áudio/eventos/resultados das tools.
+  Não executa ferramentas nem contém as regras de negócio do orquestrador.
+
+A ponte é uma escolha desta POC para isolar o transporte bidirecional da AWS;
+não é um serviço adicional hospedado na AWS, nem uma exigência de que o Nova
+seja acessado em dois processos. Ela pode ser substituída por um transporte Go
+no futuro, após validar suporte/compatibilidade e manter os testes do protocolo.
+
+São **dois processos locais**, não uma obrigação de usar duas janelas de
+terminal. Os comandos ficam em primeiro plano para facilitar ver logs e parar
+cada serviço com `Ctrl+C`; por isso usamos duas abas. Poderíamos iniciar ambos
+com um supervisor/script, mas ainda seriam dois processos. Com o app não há
+terceiro terminal obrigatório: ele substitui o cliente de voz de linha de comando.
+
+### Configuração inicial — somente se ainda necessária
+
 Execute os comandos na raiz do repositório. A conexão com o Bedrock é feita
 somente pela ponte Python no Mac; o gateway Go e o app Apple não precisam
 receber as credenciais AWS. Para voz bidirecional, use credenciais AWS padrão
@@ -119,7 +209,8 @@ make nova-smoke WAV=/absolute/path/sample-pt-br.wav
 O smoke test usa a ponte já autenticada, recebe áudio falado e salva
 `/private/tmp/sts-nova-response.wav`. **Ele faz uma chamada real à AWS e gera
 cobrança do Bedrock.** Para testar também o gateway Go, siga a seção Stage 3
-abaixo; para ferramentas MCP, use `make mcp-gateway`. O `STS_DEVELOPMENT_TOKEN`
+abaixo; para apenas Notes, use `make mcp-gateway`; para Notes + Agenda, use a
+configuração `STS_MCP_SERVERS` da seção de dois MCPs. O `STS_DEVELOPMENT_TOKEN`
 é escolhido por você para proteger a conexão local e **não é uma credencial AWS**.
 Encerre a ponte e o gateway com Ctrl+C ao terminar.
 
@@ -169,7 +260,8 @@ limits, latency definitions, and the Stage 2 validation results.
 
 ## Real Nova 2 Sonic through the gateway (Stage 3)
 
-Use three terminals. The local token is your choice and is unrelated to AWS
+For the Apple app, use the two-terminal quick start above. A third terminal is
+needed only for the WAV command-line tests below. The local token is your choice and is unrelated to AWS
 credentials. The Python bridge uses the AWS profile already authorized for
 Bedrock; set `AWS_PROFILE` only if you need a named profile.
 
@@ -177,7 +269,7 @@ Terminal 1 — private Python/Bedrock bridge:
 
 ```bash
 make nova-install
-export AWS_PROFILE=sts-poc # or the existing profile you configured above
+export AWS_PROFILE=TerraformUser # or your existing authorized profile
 export AWS_REGION=us-east-1
 make nova-bridge
 ```
