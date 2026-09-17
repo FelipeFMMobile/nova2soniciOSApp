@@ -132,8 +132,17 @@ import OSLog
         let generation = epoch
         if provider == "fake" {
             if !testMode { _ = try audio.start(microphone: false) { [weak self] error in self?.fail(error) } }
-            try sendPCM(Data(repeating: 0, count: 16000))
-            try socket.send(VoiceEvent(type: "turn.commit", sessionId: conversation.sessionId, turnId: inputTurn))
+            inputTask = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.sendPCM(Data(repeating: 0, count: 16000))
+                    guard !Task.isCancelled, self.epoch == generation else { return }
+                    try self.socket.send(VoiceEvent(type: "turn.commit", sessionId: self.conversation.sessionId, turnId: self.inputTurn))
+                } catch {
+                    guard !Task.isCancelled, self.epoch == generation else { return }
+                    self.fail((error as? VoiceFailure) ?? .disconnected)
+                }
+            }
             return
         }
         let stream = try audio.start(microphone: true) { [weak self] error in
@@ -159,15 +168,18 @@ import OSLog
                 self.capturedBuffers += 1; self.capturedBytes += data.count
                 self.inputLevel = VoiceDiagnostics.level(data); self.lastCapture = Date()
                 if self.inputLevel > 0.001 { self.lastSignal = Date() }
-                do { try self.sendPCM(data) } catch { self.fail((error as? VoiceFailure) ?? .audioFormat); return }
+                do { try await self.sendPCM(data) } catch {
+                    guard !Task.isCancelled, self.epoch == generation else { return }
+                    self.fail((error as? VoiceFailure) ?? .audioFormat); return
+                }
             }
         }
     }
-    private func sendPCM(_ data: Data) throws {
+    private func sendPCM(_ data: Data) async throws {
         guard let session = conversation.sessionId else { throw VoiceFailure.disconnected }
         for frame in try frames.append(data) {
             sequence += 1
-            try socket.send(VoiceEvent(type: "audio.append", sessionId: session, turnId: inputTurn,
+            try await socket.sendAudio(VoiceEvent(type: "audio.append", sessionId: session, turnId: inputTurn,
                                        sequence: sequence, audio: frame.base64EncodedString(), sampleRate: 16000))
         }
     }

@@ -67,7 +67,7 @@ import OSLog
                     if pcm.isEmpty { return }
                     if case .dropped = channel.continuation.yield(pcm) {
                         channel.continuation.finish()
-                        Task { @MainActor in onFailure(.backpressure) }
+                        Task { @MainActor in onFailure(.captureBackpressure) }
                     }
                 } catch {
                     channel.continuation.finish()
@@ -86,7 +86,7 @@ import OSLog
 
     func enqueue(_ pcm: Data) throws {
         // Nova generates faster than playback. Bound storage to 30 s, but schedule only ~256 ms.
-        guard pending.count + pcm.count <= 24000 * 2 * 30 else { throw VoiceFailure.backpressure }
+        guard pending.count + pcm.count <= 24000 * 2 * 30 else { throw VoiceFailure.playbackBackpressure }
         pending.append(pcm); pump()
     }
     func clearPlayback() {

@@ -97,6 +97,7 @@ public struct VoiceEvent: Codable, Equatable, Sendable {
 
 public enum VoiceFailure: Error, LocalizedError, Equatable, Sendable {
     case invalidEvent, invalidConfiguration, sessionMismatch, audioFormat, audioOrder, backpressure, disconnected, microphoneDenied
+    case sendBackpressure, captureBackpressure, playbackBackpressure
     public var errorDescription: String? {
         switch self {
         case .invalidEvent: return "O gateway enviou um evento inválido ou incompatível."
@@ -105,6 +106,9 @@ public enum VoiceFailure: Error, LocalizedError, Equatable, Sendable {
         case .audioFormat: return "O áudio recebido não é PCM16 mono a 24 kHz."
         case .audioOrder: return "A sequência de áudio está incompleta. Reinicie a conversa."
         case .backpressure: return "A fila de áudio/rede excedeu o limite. A conversa foi encerrada."
+        case .sendBackpressure: return "O envio ao gateway ficou congestionado por mais de 1 s. A conversa foi encerrada."
+        case .captureBackpressure: return "A fila de captura do microfone excedeu o limite. A conversa foi encerrada."
+        case .playbackBackpressure: return "A fila de reprodução excedeu 30 s de áudio. A conversa foi encerrada."
         case .disconnected: return "A conexão foi perdida. Confira o gateway e o token local."
         case .microphoneDenied: return "Permita o uso do microfone nos Ajustes do sistema."
         }

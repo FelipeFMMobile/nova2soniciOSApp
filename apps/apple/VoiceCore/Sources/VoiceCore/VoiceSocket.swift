@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-/// One ordered writer for control and audio. Overflow terminates instead of losing PCM frames.
+/// One ordered writer. Audio waits for capacity; persistent congestion terminates without dropping PCM.
 @MainActor public final class VoiceSocket {
     public var onEvent: (@MainActor (VoiceEvent) -> Void)?
     public var onFailure: (@MainActor (VoiceFailure) -> Void)?
@@ -11,7 +11,7 @@ import OSLog
     private var receivedAudio = 0
     private var socket: URLSessionWebSocketTask?
     private var session: URLSession?
-    private var outbound: AsyncStream<VoiceEvent>.Continuation?
+    private var outbound: VoiceOutbox?
     private var reader: Task<Void, Never>?
     private var writer: Task<Void, Never>?
     private var deadline: Task<Void, Never>?
@@ -34,16 +34,17 @@ import OSLog
         let socket = session.webSocketTask(with: request)
         socket.maximumMessageSize = 512 * 1024
         self.session = session; self.socket = socket
-        let channel = AsyncStream<VoiceEvent>.makeStream(bufferingPolicy: .bufferingOldest(16))
-        outbound = channel.continuation
+        let outbox = VoiceOutbox()
+        outbound = outbox
         writer = Task { [weak self] in
             do {
-                for await event in channel.stream {
+                for await event in outbox.stream {
                     try Task.checkCancellation()
                     guard self?.generation == epoch else { return }
                     let data = try event.encoded()
                     guard let text = String(data: data, encoding: .utf8) else { throw VoiceFailure.invalidEvent }
                     try await socket.send(.string(text))
+                    outbox.sent()
                     guard let self, self.generation == epoch else { return }
                     self.onSent?(event)
                     if event.type == "audio.append" { self.sentAudio += 1 }
@@ -84,18 +85,36 @@ import OSLog
 
     public func send(_ event: VoiceEvent) throws {
         guard let outbound else { throw VoiceFailure.disconnected }
-        switch outbound.yield(event) {
-        case .enqueued: break
-        case .dropped: fail(.backpressure, epoch: generation); throw VoiceFailure.backpressure
-        case .terminated: throw VoiceFailure.disconnected
-        @unknown default: throw VoiceFailure.disconnected
+        do { try outbound.enqueueControl(event) }
+        catch {
+            if error as? VoiceFailure == .sendBackpressure { fail(.sendBackpressure, epoch: generation) }
+            throw error
+        }
+    }
+
+    /// Use sequentially from the microphone consumer; never call on the render thread.
+    public func sendAudio(_ event: VoiceEvent) async throws {
+        guard event.type == "audio.append" else { throw VoiceFailure.invalidEvent }
+        guard let outbound else { throw VoiceFailure.disconnected }
+        let epoch = generation
+        let waiting = outbound.audioFull
+        if waiting { log.info("SEND waiting for queue capacity (timeout=1000ms)") }
+        do {
+            try await outbound.enqueueAudio(event)
+            if waiting { log.info("SEND queue capacity recovered") }
+        } catch {
+            if error as? VoiceFailure == .sendBackpressure {
+                log.error("SEND queue remained full for 1000ms")
+                fail(.sendBackpressure, epoch: epoch)
+            }
+            throw error
         }
     }
 
     public func disconnect() {
         if socket != nil { log.info("Disconnecting voice WebSocket") }
         generation += 1
-        outbound?.finish(); outbound = nil
+        outbound?.close(); outbound = nil
         deadline?.cancel(); deadline = nil
         reader?.cancel(); reader = nil; writer?.cancel(); writer = nil
         socket?.cancel(with: .goingAway, reason: nil); socket = nil

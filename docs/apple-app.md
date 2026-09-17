@@ -199,3 +199,16 @@ já vem da captura/processamento de voz. Se apenas outro canal tiver sinal,
 compartilhe os níveis para revisar a rota antes de alterar o canal selecionado.
 A seleção explícita é coberta por testes sintéticos de nove canais; a resposta
 falada real da Nova ainda requer validação no dispositivo.
+
+### Congestionamento de envio
+
+O consumidor de PCM aguarda espaço antes de enviar cada frame. A fila mantém
+até 16 eventos de áudio (incluindo o envio em andamento), com duas posições
+reservadas para controle. A capacidade só é liberada após o WebSocket concluir
+o envio; atrasos curtos não descartam áudio nem encerram imediatamente a sessão.
+A espera suspende a tarefa, sem bloquear a UI ou a thread de captura, e respeita
+cancelamento/desconexão. Se a fila permanecer cheia por 1 s, o app encerra com
+erro específico de envio. As filas de captura e reprodução continuam limitadas
+e agora exibem mensagens próprias. Os logs mostram `SEND waiting for queue
+capacity`, recuperação ou timeout. Essa tolerância não garante operação sob
+indisponibilidade prolongada; valide novamente a conversa real com ferramentas.
