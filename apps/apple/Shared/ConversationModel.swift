@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import VoiceCore
+import OSLog
 
 @MainActor final class ConversationModel: ObservableObject {
     @Published var conversation = ConversationState()
@@ -12,6 +13,15 @@ import VoiceCore
     @Published private(set) var playing = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var requestId: String?
+    @Published private(set) var inputLevel = 0.0
+    @Published private(set) var capturedBuffers = 0
+    @Published private(set) var capturedBytes = 0
+    @Published private(set) var sentFrames = 0
+    @Published private(set) var audioWarning: String?
+    private let audioLog = Logger(subsystem: "com.sts.NovaVoice", category: "Audio")
+    private var diagnosticsTask: Task<Void, Never>?
+    private var lastCapture: Date?
+    private var lastSignal: Date?
     private let socket = VoiceSocket()
     private let audio = VoiceAudio()
     private var inputTask: Task<Void, Never>?
@@ -35,6 +45,9 @@ import VoiceCore
         #endif
         socket.onEvent = { [weak self] event in self?.receive(event) }
         socket.onFailure = { [weak self] error in self?.fail(error) }
+        socket.onSent = { [weak self] event in
+            if event.type == "audio.append" { self?.sentFrames += 1 }
+        }
         audio.onPlayingChanged = { [weak self] value in self?.playing = value }
         #if os(iOS)
         for name in [AVAudioSession.didBecomeInactiveNotification, AVAudioSession.routeChangeNotification] {
@@ -59,6 +72,8 @@ import VoiceCore
     func start() {
         guard !active else { return }
         errorMessage = nil
+        inputLevel = 0; capturedBuffers = 0; capturedBytes = 0; sentFrames = 0
+        audioWarning = nil; lastCapture = nil; lastSignal = nil
         do { _ = try GatewayConfiguration.validate(url) } catch { fail(.invalidConfiguration); return }
         epoch += 1; let generation = epoch
         active = true; stopping = false
@@ -79,6 +94,7 @@ import VoiceCore
         guard active, !stopping else { return }
         stopping = true; startTask?.cancel(); startTask = nil
         inputTask?.cancel(); inputTask = nil; audio.stop()
+        diagnosticsTask?.cancel(); diagnosticsTask = nil; inputLevel = 0
         guard let session = conversation.sessionId else { finish(); return }
         do { try socket.send(VoiceEvent(type: "session.stop", sessionId: session)) }
         catch { finish(); return }
@@ -91,6 +107,7 @@ import VoiceCore
         epoch += 1; active = false; stopping = false; playing = false
         startTask?.cancel(); startTask = nil; stopTask?.cancel(); stopTask = nil
         inputTask?.cancel(); inputTask = nil
+        diagnosticsTask?.cancel(); diagnosticsTask = nil; inputLevel = 0
         audio.stop(); socket.disconnect(); conversation.disconnect(); frames.reset()
     }
     private func fail(_ error: VoiceFailure) { errorMessage = error.localizedDescription; finish() }
@@ -122,9 +139,26 @@ import VoiceCore
         let stream = try audio.start(microphone: true) { [weak self] error in
             guard self?.epoch == generation else { return }; self?.fail(error)
         }
+        audioLog.info("Audio engine started; waiting for converted PCM16 buffers")
+        let started = Date()
+        diagnosticsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                guard let self, self.epoch == generation, !self.stopping else { return }
+                let now = Date()
+                let stalled = now.timeIntervalSince(self.lastCapture ?? started) >= 5
+                if stalled { self.inputLevel = 0 }
+                self.audioWarning = stalled ? "Nenhum áudio convertido recebido há 5 s. Confira o dispositivo de entrada."
+                    : (now.timeIntervalSince(self.lastSignal ?? started) >= 10 ? "Áudio chegando, mas nível muito baixo há 10 s. Confira microfone, volume e modo de voz do sistema." : nil)
+                self.audioLog.info("PCM buffers=\(self.capturedBuffers) bytes=\(self.capturedBytes) sentFrames=\(self.sentFrames) rms=\(self.inputLevel) stalled=\(stalled)")
+            }
+        }
         inputTask = Task { [weak self] in
             for await data in stream {
                 guard let self, !Task.isCancelled, self.epoch == generation, !self.stopping else { return }
+                self.capturedBuffers += 1; self.capturedBytes += data.count
+                self.inputLevel = VoiceDiagnostics.level(data); self.lastCapture = Date()
+                if self.inputLevel > 0.001 { self.lastSignal = Date() }
                 do { try self.sendPCM(data) } catch { self.fail((error as? VoiceFailure) ?? .audioFormat); return }
             }
         }

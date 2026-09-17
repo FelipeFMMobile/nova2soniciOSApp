@@ -23,6 +23,17 @@ struct ContentView: View {
                     Label(model.stateLabel, systemImage: model.active ? "circle.fill" : "circle")
                         .font(.subheadline).foregroundStyle(model.active ? accent : .gray)
                         .accessibilityIdentifier("conversation.state")
+                    if model.provider == "nova" {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ProgressView(value: min(1, model.inputLevel * 10))
+                                .accessibilityLabel("Nível do microfone")
+                            Text("Captura: \(model.capturedBuffers) buffers · \(model.capturedBytes) bytes · Enviados: \(model.sentFrames) frames")
+                                .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            if let warning = model.audioWarning {
+                                Text(warning).font(.caption).foregroundStyle(.orange)
+                            }
+                        }
+                    }
                     Button {
                         if model.active { model.stop() } else { model.start() }
                     } label: {

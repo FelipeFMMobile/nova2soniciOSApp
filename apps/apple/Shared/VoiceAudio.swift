@@ -1,7 +1,9 @@
 import AVFoundation
 import VoiceCore
+import OSLog
 
 @MainActor final class VoiceAudio {
+    private let log = Logger(subsystem: "com.sts.NovaVoice", category: "Audio")
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
@@ -43,6 +45,9 @@ import VoiceCore
         if microphone { try engine.inputNode.setVoiceProcessingEnabled(true) }
         else if engine.outputNode.isVoiceProcessingEnabled { try engine.outputNode.setVoiceProcessingEnabled(false) }
         let captureFormat = microphone ? engine.inputNode.outputFormat(forBus: 0) : nil
+        if let captureFormat {
+            log.info("Capture format: sampleRate=\(captureFormat.sampleRate) channels=\(captureFormat.channelCount) voiceProcessing=\(self.engine.inputNode.isVoiceProcessingEnabled)")
+        }
         let deviceFormat = try VoiceGraphFormat.output(microphone: captureFormat, hardware: engine.outputNode.outputFormat(forBus: 0))
         // Pin duplex I/O first; the mixer then resamples Nova's 24 kHz player input.
         if #available(macOS 27, iOS 27, *) { try engine.connectNode(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat) }

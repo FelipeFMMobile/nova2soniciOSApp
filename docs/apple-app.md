@@ -155,3 +155,30 @@ o modo hardware-free foi corrigido para não desativar uma sessão não ativada,
 e a repetição passou e finalizou normalmente. Ativação de áudio real no iOS
 ainda usa a API síncrona: migrar para ativação assíncrona e medir responsividade
 faz parte da revisão de áudio/dispositivo na etapa 5.
+## Diagnóstico de captura e WebSocket
+
+No modo Nova, a tela mostra nível do PCM convertido, buffers/bytes capturados e
+frames enviados pelo WebSocket. O medidor usa RMS (com ganho visual de 10x), não
+é reconhecimento de fala. O contador de enviados avança após `socket.send`
+concluir: isso não comprova processamento pelo gateway ou pela AWS.
+
+Após 5 s sem PCM convertido, aparece um aviso de captura parada. Após 10 s sem
+nível acima de 0,001, aparece um aviso de sinal baixo. Esses avisos não encerram
+a sessão. Os contadores reiniciam a cada conversa.
+
+Execute pelo Xcode e abra **View → Debug Area → Activate Console**. Filtre por
+`PCM`, `SEND`, `RECV` ou `WebSocket`. Os logs usam o subsistema
+`com.sts.NovaVoice`, categorias `Audio` e `Gateway`:
+
+- `Capture format`: formato de entrada e processamento de voz.
+- `PCM buffers=... bytes=... sentFrames=... rms=... stalled=...`: resumo por segundo.
+- `SEND` e `RECV`: tipo, sequência e tamanho Base64, sem payload. Áudio é
+  registrado no primeiro frame e a cada 50 frames para não sobrecarregar o console.
+- Falhas de rede: domínio e código do erro, sem descrição ou credenciais.
+
+Não são registrados token, PCM/Base64, transcrições, argumentos/resultados de
+tools nem mensagens de erro do servidor. Nenhum áudio é gravado em disco.
+Se houver problema, compartilhe o trecho desses resumos enquanto fala por
+10–15 s. Buffers zerados indicam ausência de PCM no consumidor; RMS próximo de
+zero com buffers aumentando indica sinal silencioso/baixo após conversão;
+frames enviados aumentando permite investigar o gateway/bridge em seguida.
