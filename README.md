@@ -46,8 +46,13 @@ permanece em `127.0.0.1:8091` mesmo nesse modo.
 
 `Ctrl+C` encerra somente os processos iniciados pelo assistente, incluindo os
 MCPs filhos. Se um serviço cair, ele encerra os demais e informa onde estão os
-logs. Portas ocupadas são rejeitadas: não mata nem reaproveita processos
-existentes. Bancos persistem em `data/`; logs privados em `logs/dev/`, ambos
+logs. Se uma porta estiver ocupada por gateway/bridge reconhecido desta checkout
+e do mesmo usuário, mostra serviço/PID/porta e pergunta se deseja encerrá-lo
+antes de iniciar outro ambiente. A confirmação é obrigatória, interrompe
+conversas ativas e usa SIGTERM, sem encerramento forçado de serviços existentes.
+Processos desconhecidos são preservados: use outra porta ou encerre manualmente.
+Serviços iniciados por `go run` fora desse supervisor podem não ser reconhecidos.
+Bancos persistem em `data/`; logs privados em `logs/dev/`, ambos
 ignorados pelo Git. Configurações `STS_*`/`NOVA_*` herdadas são descartadas para
 não ativar MCPs ou captura de evidência sem sua escolha. Cada execução preserva
 os aliases/políticas do exemplo MCP. Fixtures opt-in usam a reunião fictícia de

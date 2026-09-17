@@ -18,6 +18,44 @@ spec.loader.exec_module(dev)
 
 
 class DevTests(unittest.TestCase):
+    def test_existing_service_requires_confirmation_and_decline_preserves_it(self):
+        with patch.object(dev, "check_port", side_effect=RuntimeError("busy")), \
+             patch.object(dev.shutil, "which", return_value="/usr/sbin/lsof"), \
+             patch.object(dev.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "123\n", "")), \
+             patch.object(dev, "process_identity", return_value=("gateway", "started")), \
+             patch.object(dev, "yes", return_value=False), patch.object(dev.os, "kill") as kill:
+            with self.assertRaises(RuntimeError):
+                dev.ensure_ports([(8080, "127.0.0.1")])
+            kill.assert_not_called()
+
+    def test_unknown_listener_is_never_stopped(self):
+        with patch.object(dev, "check_port", side_effect=RuntimeError("busy")), \
+             patch.object(dev.shutil, "which", return_value="/usr/sbin/lsof"), \
+             patch.object(dev.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "123\n", "")), \
+             patch.object(dev, "process_identity", return_value=None), patch.object(dev.os, "kill") as kill:
+            with self.assertRaises(RuntimeError):
+                dev.ensure_ports([(8080, "127.0.0.1")])
+            kill.assert_not_called()
+
+    def test_confirmed_service_is_stopped_gracefully(self):
+        with patch.object(dev, "check_port", side_effect=[RuntimeError("busy"), None]), \
+             patch.object(dev.shutil, "which", return_value="/usr/sbin/lsof"), \
+             patch.object(dev.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "123\n", "")), \
+             patch.object(dev, "process_identity", return_value=("gateway", "started")), \
+             patch.object(dev, "yes", return_value=True), patch.object(dev.os, "kill") as kill:
+            dev.ensure_ports([(8080, "127.0.0.1")])
+            kill.assert_called_once_with(123, signal.SIGTERM)
+
+    def test_changed_process_identity_is_not_signaled(self):
+        with patch.object(dev, "check_port", side_effect=RuntimeError("busy")), \
+             patch.object(dev.shutil, "which", return_value="/usr/sbin/lsof"), \
+             patch.object(dev.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "123\n", "")), \
+             patch.object(dev, "process_identity", side_effect=[("gateway", "old"), ("gateway", "new")]), \
+             patch.object(dev, "yes", return_value=True), patch.object(dev.os, "kill") as kill:
+            with self.assertRaises(RuntimeError):
+                dev.ensure_ports([(8080, "127.0.0.1")])
+            kill.assert_not_called()
+
     def test_mcp_selection_and_no_default_fixtures(self):
         self.assertEqual(dev.servers(1, False), [])
         self.assertEqual([s["alias"] for s in dev.servers(2, False)], ["memo"])

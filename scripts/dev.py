@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shlex
 import shutil
 import signal
 import socket
@@ -89,6 +90,86 @@ def check_port(port: int, host: str = "127.0.0.1") -> None:
             raise RuntimeError(f"Porta {port} indisponível. Encerre o serviço anterior; nenhum processo existente será parado.") from error
 
 
+def process_identity(pid: int) -> tuple[str, str] | None:
+    """Recognize this checkout's services, not arbitrary processes named Python/gateway."""
+    def query(command: list[str]) -> str:
+        result = subprocess.run(command, capture_output=True, text=True)
+        return result.stdout.strip() if result.returncode == 0 else ""
+    owner = query(["ps", "-p", str(pid), "-o", "uid="])
+    if owner != str(os.getuid()):
+        return None
+    started = query(["ps", "-p", str(pid), "-o", "lstart="])
+    cwd = query(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"])
+    if f"n{ROOT}" not in cwd.splitlines() or not started:
+        return None
+    executable = query(["lsof", "-a", "-p", str(pid), "-d", "txt", "-Fn"])
+    if f"n{ROOT / 'bin/gateway'}" in executable.splitlines():
+        return "gateway", started
+    command = query(["ps", "-p", str(pid), "-o", "command="])
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if argv == [str(ROOT / "services/nova-bridge/.venv/bin/python"), "-m", "nova_bridge.server"]:
+        return "bridge", started
+    return None
+
+
+def ensure_ports(ports: list[tuple[int, str]]) -> None:
+    """Offer graceful stop of recognized listeners only, rechecking identity before signaling."""
+    occupied = []
+    for port, host in ports:
+        try:
+            check_port(port, host)
+            continue
+        except RuntimeError:
+            pass
+        if not shutil.which("lsof"):
+            raise RuntimeError("Porta ocupada; lsof ausente. Encerre o serviço manualmente.")
+        result = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+                                capture_output=True, text=True)
+        ids = result.stdout.split()
+        if not ids or any(not pid.isdigit() for pid in ids):
+            raise RuntimeError(f"Não foi possível identificar a porta {port}. Nenhum processo será encerrado.")
+        for pid in sorted({int(pid) for pid in ids}):
+            identity = process_identity(pid)
+            if identity is None:
+                raise RuntimeError(f"Porta {port} pertence a processo não reconhecido desta POC (PID {pid}). Encerre manualmente ou escolha outra porta.")
+            occupied.append((port, pid, identity))
+    if not occupied:
+        return
+    print("\nServiços desta POC já ativos:")
+    for port, pid, identity in occupied:
+        print(f"  {identity[0]} · porta {port} · PID {pid}")
+    print("Encerrar interrompe conversas ativas. Bancos serão preservados.")
+    if not yes("Encerrar esses serviços para iniciar o ambiente escolhido?"):
+        raise RuntimeError("Inicialização cancelada; serviços existentes preservados.")
+    for _, pid, identity in occupied:
+        current = process_identity(pid)
+        if current is None:
+            # Another supervisor may have already stopped its services.
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+        if current != identity:
+            raise RuntimeError("A identidade de um processo mudou. Encerramento interrompido por segurança.")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        try:
+            for port, host in ports:
+                check_port(port, host)
+            print("Portas liberadas; iniciando o novo ambiente.")
+            return
+        except RuntimeError:
+            time.sleep(0.2)
+    raise RuntimeError("Serviço não liberou a porta em 10 s. Nenhum encerramento forçado foi aplicado; confira o terminal anterior.")
+
+
 def stop_children(children: list[subprocess.Popen]) -> None:
     # Each child starts its own group, containing only the services we launched (including MCPs).
     for child in reversed(children):
@@ -144,9 +225,11 @@ def run(env: dict[str, str], selected: list[dict], nova: bool) -> None:
             raise RuntimeError(f"Ferramenta ausente: {executable}. Veja os pré-requisitos no README.")
     gateway_port = int(env["STS_GATEWAY_ADDRESS"].rsplit(":", 1)[1])
     bridge_port = int(env["NOVA_BRIDGE_PORT"])
-    check_port(gateway_port, "0.0.0.0" if env["STS_GATEWAY_ADDRESS"].startswith("0.0.0.0") else "127.0.0.1")
+    ports = [(gateway_port, "0.0.0.0" if env["STS_GATEWAY_ADDRESS"].startswith("0.0.0.0") else "127.0.0.1")]
     if nova:
-        check_port(bridge_port)
+        ports.append((bridge_port, "127.0.0.1"))
+    ensure_ports(ports)
+    if nova:
         checked(["aws", "sts", "get-caller-identity", "--profile", env["AWS_PROFILE"], "--region", "us-east-1"], env)
         interpreter = ROOT / "services/nova-bridge/.venv/bin/python"
         if not interpreter.exists():
