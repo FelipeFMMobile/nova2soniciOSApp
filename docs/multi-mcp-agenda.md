@@ -85,17 +85,42 @@ Criação verifica disponibilidade e conflito na mesma transação que grava eve
 e resultado de replay. Não aceita sobreposição com eventos ativos; eventos
 adjacentes podem coexistir. Cancelamento exige evento ativo existente.
 
-O filtro de intenção é conservador e específico desta POC PT-BR: o ASR final
-de USER deve começar com `agende`, `marque`, `crie um evento/agendamento`,
-`quero agendar/marcar` (opcional `por favor`, ou prefixo `consulte/busque/leia … e`), conter data completa numérica
-`AAAA-MM-DD` ou `DD/MM/AAAA` e horário numérico `09:00`/`9h`. Negação,
-condicional, incerteza, citações e termos relativos como amanhã/depois bloqueiam
-criação com `clarification_required`. O modelo deve esclarecer informações
-ambíguas; o Go não transforma linguagem livre em uma data presumida. Isso
-**não é um parser geral de intenção**: datas por extenso, pedidos compostos
-fora dessa gramática e variantes do ASR podem exigir reformulação. O teste Nova
-real precisa avaliar essa limitação antes do aceite. O schema exige título e
-intervalo; validação semântica final de horários/disponibilidade fica no Go.
+A criação de eventos nesta POC é direta: uma chamada da Nova a
+`agenda.create_event` com argumentos válidos pode gravar sem checar a frase
+USER, sem filtro de pedido explícito/negação e sem confirmação adicional.
+A escolha da ferramenta fica a cargo do modelo; não há garantia determinística
+contra chamadas indevidas. O schema exige título e intervalo; RFC3339,
+disponibilidade, conflitos e idempotência continuam validados no backend.
+Por compatibilidade, a configuração ainda usa a chave de política
+`explicit_intent`, mas o built-in `agenda.create_event` não aplica o filtro ASR.
+Esta exceção não vale para outras ferramentas ou para cancelamento.
+
+### Diagnóstico de formatação e intenção
+
+O prompt da bridge inclui exemplo fala → argumentos RFC3339 antes da chamada
+nativa; nenhuma confirmação de criação adicional foi introduzida. O host
+valida `start/end` de criação/consultas: strings RFC3339 com offset ou Z, sem
+frações. Se falhar, retorna `invalid_datetime_format`, `fields`,
+`expected_format`, exemplo e `instruction` para corrigir a chamada. Exemplos
+não são valores padrão; o host nunca interpreta texto livre ou presume datas.
+
+Criação não retorna mais `clarification_required` por intenção ASR. Uma chamada
+com argumentos válidos pode gravar imediatamente. O Go confia nos instantes
+interpretados pela Nova; não compara a data dos argumentos com a fala. Formato
+válido não garante interpretação correta: confira o evento criado. Cancelamento
+continua exigindo confirmação posterior e disponibilidade/idempotência seguem
+ativas.
+
+Reinicie `make dev`, abra nova conversa e no app expanda **Ferramentas MCP →
+Argumentos reais enviados pela Nova**, depois **Detalhes do resultado**. Os
+argumentos são preservados após a resposta. Para “reunião dia 18 de setembro
+de 2026 às 10 horas por uma hora”, espere `start=2026-09-18T10:00:00-03:00`
+e `end=2026-09-18T11:00:00-03:00`; com pedido explícito e horário disponível,
+espere `created`.
+Compartilhe ambos os trechos para distinguir os problemas. Dados de ferramenta
+ficam na tela e na evidência privada já existente, não são acrescentados aos
+logs públicos do Xcode. Testes com mocks não provam que a Nova real escolherá
+a ferramenta ou formatará corretamente em todas as tentativas.
 
 Para cancelar, o Go congela alias, ferramenta, argumentos/alvo, turno e validade
 60s na confirmação pendente. Somente ASR final USER em turno posterior contendo
@@ -106,13 +131,20 @@ confirmação de terminal aceita em v0.5.0. Nenhuma pendência é sucesso.
 
 ## Retry, falhas e limites
 
-Uma mutação de cada alias/tool por `requestId`: chaves incluem requestId e nome
-host completo, evitando colisões Notes/Agenda. Outra ação deliberada da mesma
-tool precisa de novo requestId. Argumentos reformulados no mesmo requestId são
-conflito; sucesso é replay do resultado durável, não segundo efeito. Não use
+Várias mutações por `requestId`: chaves incluem requestId, nome host completo e
+argumentos JSON canonizados. Pedidos diferentes podem criar outros eventos e
+notas na mesma conversa. Argumentos idênticos (mesmo que a ordem das chaves mude)
+reproduzem o resultado anterior; argumentos diferentes são uma nova operação.
+Não reformule argumentos para retry de resultado desconhecido: isso pode duplicar efeitos.
+Para criar deliberadamente uma cópia idêntica, use outro requestId. Não use
 novo requestId para retry após resultado desconhecido. Mudança de alias muda o
 namespace: mantenha aliases estáveis para retry. Os ledgers são específicos dos
 servidores Go desta POC; MCPs genéricos podem ignorar os metadados host.
+
+Compatibilidade: a chave anterior era única por ferramenta/requestId, sem
+argumentos. O novo formato não reaproveita esses registros antigos. Não faça
+retry de uma operação anterior à atualização sem consultar os bancos primeiro;
+reinicie gateway e bridge para novas conversas. Nenhum banco é apagado.
 
 Não há restart nem reexecução automática de mutações. Durante a sessão,
 chamadas concorrentes/repetidas da mesma mutação ficam bloqueadas; resultado de
@@ -179,8 +211,8 @@ GOCACHE=/private/tmp/sts-go-cache go run ./cmd/voice-client -provider nova \
 ```
 
 Fala sugerida: “Agende Consulta Aurora em vinte de maio de dois mil e trinta,
-às nove horas, por uma hora.” **Verifique o ASR**: se o modelo/ASR produzir data
-por extenso, o filtro conservador pode exigir reformulação numérica. Não trate
+às nove horas, por uma hora.” **Verifique os argumentos e o resultado**: datas
+por extenso na transcrição são aceitas; argumentos devem ser RFC3339. Não trate
 rejeição como sucesso nem force tool choice para esconder falha de seleção.
 
 1. Só Notes: criar/consultar valor fictício único em conversa nova; somente

@@ -36,18 +36,17 @@ type Pending struct {
 	Approved    bool
 }
 type Session struct {
-	intentTurn   string
-	intentText   string
-	backend      Backend
-	tools        map[string]binding
-	Specs        []map[string]any
-	namespace    string
-	Pending      *Pending
-	seen         map[string]string
-	cache        map[string]mcp.Result
-	calls        int
-	attempted    map[string]bool
-	mutationArgs map[string]string
+	intentTurn string
+	intentText string
+	backend    Backend
+	tools      map[string]binding
+	Specs      []map[string]any
+	namespace  string
+	Pending    *Pending
+	seen       map[string]string
+	cache      map[string]mcp.Result
+	calls      int
+	attempted  map[string]bool
 }
 type Job struct {
 	ID, Name, Key, TurnID string
@@ -64,7 +63,7 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 	for _, name := range allowed {
 		permit[name] = true
 	}
-	s := &Session{backend: backend, tools: map[string]binding{}, namespace: namespace, seen: map[string]string{}, cache: map[string]mcp.Result{}, mutationArgs: map[string]string{}, attempted: map[string]bool{}}
+	s := &Session{backend: backend, tools: map[string]binding{}, namespace: namespace, seen: map[string]string{}, cache: map[string]mcp.Result{}, attempted: map[string]bool{}}
 	for _, tool := range discovered {
 		if !permit[tool.Name] {
 			continue
@@ -89,7 +88,7 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 			switch original {
 			case "notes.list":
 				policy = mcp.ReadOnly
-			case "notes.create":
+			case "notes.create", "agenda.create_event":
 				policy = mcp.ExplicitIntent
 			default:
 				policy = mcp.ConfirmLater
@@ -137,6 +136,11 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 	if !ok {
 		return fail("tool_not_allowed")
 	}
+	if b.original == "agenda.create_event" || b.original == "agenda.list_slots" || b.original == "agenda.list_events" {
+		if result := agendaFormatError(args); result != nil {
+			return Job{ID: id, Name: b.tool.Name, TurnID: turn, Args: append(json.RawMessage(nil), args...)}, result
+		}
+	}
 	if mcp.Validate(b.schema, args) != nil {
 		return fail("invalid_arguments")
 	}
@@ -150,16 +154,10 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 	s.calls++
 	s.seen[id] = k
 	j := Job{ID: id, Name: b.tool.Name, Key: k, TurnID: turn, Args: append(json.RawMessage(nil), args...)}
-	if b.policy != mcp.ReadOnly {
-		// One mutation of each kind per logical request. Stable identity survives
-		// reconnects even if the model reformulates arguments: SQLite rejects the
-		// conflict instead of creating a second note. A deliberate new mutation
-		// requires a fresh requestId.
-		if previous := s.mutationArgs[b.tool.Name]; previous != "" && previous != k {
-			return fail("logical_request_conflict")
-		}
-		j.Key = key(s.namespace, b.tool.Name, json.RawMessage(`null`))
-	}
+	// Each distinct canonical argument set is an independent operation. Keep
+	// its key stable across model tool IDs, turns and reconnects, so identical
+	// retries cannot duplicate effects. Changed arguments are a new operation,
+	// not a safe retry of an unknown outcome.
 	if b.policy != mcp.ReadOnly {
 		if cached, ok := s.cache[j.Key]; ok {
 			return j, &cached
@@ -182,11 +180,12 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 			return j, &r
 		}
 	}
-	if b.policy == mcp.ExplicitIntent && b.original != "notes.create" && (s.intentTurn != turn || !explicitAgendaIntent(s.intentText)) {
+	// Built-in agenda creation is direct for this POC: trust the model's tool
+	// selection, while preserving schema, dates, storage rules and idempotency.
+	if b.policy == mcp.ExplicitIntent && b.original != "notes.create" && b.original != "agenda.create_event" && (s.intentTurn != turn || !explicitAgendaIntent(s.intentText)) {
 		return fail("clarification_required")
 	}
 	if b.policy != mcp.ReadOnly {
-		s.mutationArgs[j.Name] = k
 		s.attempted[j.Key] = true
 	}
 	return j, nil
@@ -311,14 +310,12 @@ func (s *Session) Interrupt() { s.Pending = nil; s.intentText = "" }
 // Conservative PT-BR terminal POC grammar. Intent comes only from finalized
 // USER ASR, never annotations, arguments, model output or quoted text.
 var agendaIntent = regexp.MustCompile(`^(por favor )?((consulte|busque|leia) .+ e )?(agende|agenda|marque|crie um agendamento|crie um evento|quero agendar|quero marcar) .+`)
-var agendaDate = regexp.MustCompile(`\b\d{4} \d{2} \d{2}\b|\b\d{2} \d{2} \d{4}\b`)
-var agendaClock = regexp.MustCompile(`\b\d{1,2} \d{2}\b|\b\d{1,2}h(\d{2})?\b`)
 
 func explicitAgendaIntent(text string) bool {
-	if !agendaIntent.MatchString(text) || !agendaDate.MatchString(text) || !agendaClock.MatchString(text) {
+	if !agendaIntent.MatchString(text) {
 		return false
 	}
-	for _, word := range []string{"nao", "talvez", "se", "disse", "amanha", "depois", "algum"} {
+	for _, word := range []string{"nao", "talvez", "se", "disse", "algum"} {
 		for _, w := range strings.Fields(text) {
 			if w == word {
 				return false

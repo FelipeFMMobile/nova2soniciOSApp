@@ -56,8 +56,9 @@ tool-use ID identifies the operation; the gateway maps Nova names to MCP names
 in results. See [MCP integration](mcp-integration.md) for limits and approval.
 
 `session.start` accepts optional `requestId` (a valid ASCII ID). Reuse it for
-retries of the same logical request; use a new one for a deliberate mutation.
-This POC allows one note creation and one deletion per request ID. Without it,
+retries with identical arguments. Multiple distinct operations are allowed;
+keys include tool name and canonical arguments. Changed arguments are not a safe retry.
+Use a new ID for a deliberate identical copy. Without it,
 the server uses the fresh session ID, so cross-connection retry is not deduped.
 
 Trusted clients may send a pending confirmation without executing the tool:

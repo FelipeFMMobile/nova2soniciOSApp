@@ -1,0 +1,185 @@
+import AVFoundation
+import VoiceCore
+import OSLog
+
+/// Engine/player state is confined to this serial queue, never the UI executor.
+final class VoiceAudio: @unchecked Sendable {
+    // CoreAudio control calls can wait on Default-QoS internal services. Match
+    // their QoS off the UI thread; actual rendering keeps its system priority.
+    private let queue = DispatchQueue(label: "com.sts.NovaVoice.audio", qos: .default)
+    private let log = Logger(subsystem: "com.sts.NovaVoice", category: "Audio")
+    private lazy var engine = AVAudioEngine()
+    private lazy var player = AVAudioPlayerNode()
+    private let playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 24000, channels: 1)!
+    private var tapInstalled = false
+    private var attached = false
+    #if os(iOS)
+    private var sessionActive = false
+    #endif
+    private var capture: AsyncStream<Data>.Continuation?
+    private var pending = Data()
+    private var scheduled = 0
+    private var playbackGeneration = 0
+    private var failure: (@MainActor @Sendable (VoiceFailure) -> Void)?
+    private var onPlayingChanged: (@MainActor @Sendable (Bool) -> Void)?
+    private var reportedPlaying = false
+
+    func setPlayingCallback(_ callback: @escaping @MainActor @Sendable (Bool) -> Void) {
+        queue.async { self.onPlayingChanged = callback }
+    }
+    private func notifyPlaying(_ value: Bool) {
+        guard reportedPlaying != value else { return }
+        reportedPlaying = value
+        let callback = onPlayingChanged
+        Task { @MainActor in callback?(value) }
+    }
+    private func notifyFailure(_ value: VoiceFailure) {
+        let callback = failure
+        Task { @MainActor in callback?(value) }
+    }
+
+    static func requestPermission() async -> Bool {
+        #if os(iOS)
+        return await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { allowed in continuation.resume(returning: allowed) }
+        }
+        #else
+        return await AVCaptureDevice.requestAccess(for: .audio)
+        #endif
+    }
+
+    func start(microphone: Bool, onFailure: @escaping @MainActor @Sendable (VoiceFailure) -> Void) async throws -> AsyncStream<Data> {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do { continuation.resume(returning: try self.startOnQueue(microphone: microphone, onFailure: onFailure)) }
+                catch { self.stopOnQueue(); continuation.resume(throwing: error) }
+            }
+        }
+    }
+    private func startOnQueue(microphone: Bool, onFailure: @escaping @MainActor @Sendable (VoiceFailure) -> Void) throws -> AsyncStream<Data> {
+        dispatchPrecondition(condition: .onQueue(queue))
+        stopOnQueue(); failure = onFailure
+        #if os(iOS)
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(microphone ? .playAndRecord : .playback, mode: microphone ? .voiceChat : .default,
+                                     options: microphone ? [.defaultToSpeaker, .allowBluetoothHFP] : [])
+        try audioSession.setActive(true)
+        sessionActive = true
+        #endif
+        if !attached { engine.attach(player); attached = true }
+        // Rebuild while stopped so previous sessions don't retain a 24 kHz output format.
+        engine.disconnectNodeOutput(player)
+        engine.disconnectNodeOutput(engine.mainMixerNode)
+        if microphone { try engine.inputNode.setVoiceProcessingEnabled(true) }
+        else if engine.outputNode.isVoiceProcessingEnabled { try engine.outputNode.setVoiceProcessingEnabled(false) }
+        let captureFormat = microphone ? engine.inputNode.outputFormat(forBus: 0) : nil
+        if let captureFormat {
+            log.info("Capture format: sampleRate=\(captureFormat.sampleRate) channels=\(captureFormat.channelCount) voiceProcessing=\(self.engine.inputNode.isVoiceProcessingEnabled)")
+        }
+        let deviceFormat = try VoiceGraphFormat.output(microphone: captureFormat, hardware: engine.outputNode.outputFormat(forBus: 0))
+        // Pin duplex I/O first; the mixer then resamples Nova's 24 kHz player input.
+        if #available(macOS 27, iOS 27, *) { try engine.connectNode(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat) }
+        else { engine.connect(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat) }
+        if #available(macOS 27, iOS 27, *) { try engine.connectNode(player, to: engine.mainMixerNode, format: playbackFormat) }
+        else { engine.connect(player, to: engine.mainMixerNode, format: playbackFormat) }
+        let channel = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingOldest(16))
+        capture = channel.continuation
+        if microphone {
+            let input = engine.inputNode
+            guard let format = captureFormat, input.outputFormat(forBus: 0) == format,
+                  engine.outputNode.inputFormat(forBus: 0) == format else { throw VoiceFailure.audioFormat }
+            let converter = try PCMConverter(input: format)
+            let tap: AVAudioNodeTapBlock = { buffer, _ in
+                do {
+                    let pcm = try converter.convert(buffer)
+                    if pcm.isEmpty { return }
+                    if case .dropped = channel.continuation.yield(pcm) {
+                        channel.continuation.finish()
+                        Task { @MainActor in onFailure(.captureBackpressure) }
+                    }
+                } catch {
+                    channel.continuation.finish()
+                    Task { @MainActor in onFailure(.audioFormat) }
+                }
+            }
+            if #available(macOS 27, iOS 27, *) {
+                try input.__installTap(onBus: 0, bufferSize: 1024, format: format, error: (), block: tap)
+            }
+            else { input.installTap(onBus: 0, bufferSize: 1024, format: format, block: tap) }
+            tapInstalled = true
+        }
+        engine.prepare(); try engine.start()
+        return channel.stream
+    }
+
+    func enqueue(_ pcm: Data) throws {
+        queue.async {
+            do { try self.enqueueOnQueue(pcm) }
+            catch { self.notifyFailure((error as? VoiceFailure) ?? .audioFormat) }
+        }
+    }
+    private func enqueueOnQueue(_ pcm: Data) throws {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard engine.isRunning else { return }
+        // Nova generates faster than playback. Bound storage to 30 s, but schedule only ~256 ms.
+        guard pending.count + pcm.count <= 24000 * 2 * 30 else { throw VoiceFailure.playbackBackpressure }
+        pending.append(pcm); pump()
+    }
+    func clearPlayback() {
+        queue.async { self.clearPlaybackOnQueue() }
+    }
+    private func clearPlaybackOnQueue() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        let started = ContinuousClock.now
+        playbackGeneration += 1; player.stop(); pending.removeAll(keepingCapacity: false); scheduled = 0
+        log.info("Playback stop duration=\(String(describing: started.duration(to: .now)), privacy: .public) executor=audio-serial")
+        notifyPlaying(false)
+    }
+    private func pump() {
+        guard engine.isRunning else { return }
+        while scheduled < 6 && !pending.isEmpty {
+            let count = min(2048, pending.count)
+            let data = pending.prefix(count)
+            pending.removeFirst(count)
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: AVAudioFrameCount(count / 2)),
+                  let channel = buffer.floatChannelData?[0] else { notifyFailure(.audioFormat); return }
+            buffer.frameLength = AVAudioFrameCount(count / 2)
+            data.withUnsafeBytes { raw in
+                for i in 0..<(count / 2) { channel[i] = Float(Int16(littleEndian: raw.loadUnaligned(fromByteOffset: i * 2, as: Int16.self))) / 32768 }
+            }
+            let epoch = playbackGeneration
+            scheduled += 1
+            player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                self?.queue.async { [weak self] in
+                    guard let self, self.playbackGeneration == epoch else { return }
+                    self.scheduled -= 1; self.pump()
+                    if self.scheduled == 0 && self.pending.isEmpty { self.notifyPlaying(false) }
+                }
+            }
+        }
+        if scheduled > 0 {
+            if !player.isPlaying {
+                do {
+                    if #available(macOS 27, iOS 27, *) { try player.playAudio() }
+                    else { player.play() }
+                } catch { notifyFailure(.audioFormat); return }
+            }
+            notifyPlaying(true)
+        }
+    }
+    func stop() {
+        queue.async { self.stopOnQueue() }
+    }
+    private func stopOnQueue() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
+        capture?.finish(); capture = nil
+        clearPlaybackOnQueue(); engine.stop(); failure = nil
+        #if os(iOS)
+        if sessionActive {
+            sessionActive = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        #endif
+    }
+}

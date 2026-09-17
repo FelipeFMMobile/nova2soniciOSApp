@@ -3,8 +3,34 @@ GOCACHE ?= /private/tmp/sts-go-cache
 NOVA_OUTPUT ?= /private/tmp/sts-nova-response.wav
 NOVA_GATEWAY_OUTPUT ?= /private/tmp/sts-nova-gateway-response.wav
 NOVA_BARGE_OUTPUT ?= /private/tmp/sts-nova-gateway-barge-response.wav
+APPLE_PROJECT := apps/apple/NovaVoice.xcodeproj
+APPLE_BUILD_ROOT ?= /private/tmp/sts-apple
+APPLE_SIMULATOR_ID ?= 599499E4-DD38-4C6C-9459-D4FDA8B2AE43
 
 .PHONY: build test race vet gateway mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke nova-demo nova-barge-demo
+.PHONY: apple-core-test apple-build-macos apple-build-ios apple-ui-test
+.PHONY: dev dev-plan dev-test
+
+dev:
+	python3 scripts/dev.py
+
+dev-plan:
+	python3 scripts/dev.py --dry-run
+
+dev-test:
+	python3 -m unittest discover -s tests/scripts -v
+
+apple-core-test:
+	swift test --package-path apps/apple/VoiceCore --scratch-path $(APPLE_BUILD_ROOT)-core
+
+apple-build-macos:
+	xcodebuild -project $(APPLE_PROJECT) -scheme NovaVoice -destination 'platform=macOS,arch=arm64' -configuration Debug -derivedDataPath $(APPLE_BUILD_ROOT)-macos build -quiet
+
+apple-build-ios:
+	xcodebuild -project $(APPLE_PROJECT) -scheme NovaVoice -destination 'generic/platform=iOS Simulator' -configuration Debug -derivedDataPath $(APPLE_BUILD_ROOT)-ios CODE_SIGNING_ALLOWED=NO build -quiet
+
+apple-ui-test:
+	xcodebuild -project $(APPLE_PROJECT) -scheme NovaVoice -destination 'platform=iOS Simulator,id=$(APPLE_SIMULATOR_ID)' -configuration Debug -derivedDataPath $(APPLE_BUILD_ROOT)-ios -parallel-testing-enabled NO test -quiet
 
 build:
 	env GOCACHE=$(GOCACHE) go build ./...
