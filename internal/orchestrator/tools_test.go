@@ -114,10 +114,11 @@ func TestValidationIdempotencyAndFreshReads(t *testing.T) {
 	if r == nil || !r.IsError {
 		t.Fatal("tool ID conflict accepted")
 	}
-	_, r = s.Plan("reformulated-retry", "notes_create", "turn-3", json.RawMessage(`{"title":"a","content":"different wording"}`))
-	if r == nil || !r.IsError {
-		t.Fatal("logical request allowed a second creation")
+	second, r := s.Plan("second-note", "notes_create", "turn-3", json.RawMessage(`{"title":"a","content":"different wording"}`))
+	if r != nil || second.Key == job.Key {
+		t.Fatal("distinct creation blocked", r)
 	}
+	s.Complete(second, s.Execute(context.Background(), second))
 	for i := 0; i < 2; i++ {
 		j, r := s.Plan("read", "notes_list", "turn-2", json.RawMessage(`{}`))
 		if r != nil {
@@ -125,7 +126,7 @@ func TestValidationIdempotencyAndFreshReads(t *testing.T) {
 		}
 		s.Complete(j, s.Execute(context.Background(), j))
 	}
-	if b.calls != 3 {
+	if b.calls != 4 {
 		t.Fatal("reads cached", b.calls)
 	}
 }

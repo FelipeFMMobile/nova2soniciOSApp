@@ -36,18 +36,17 @@ type Pending struct {
 	Approved    bool
 }
 type Session struct {
-	intentTurn   string
-	intentText   string
-	backend      Backend
-	tools        map[string]binding
-	Specs        []map[string]any
-	namespace    string
-	Pending      *Pending
-	seen         map[string]string
-	cache        map[string]mcp.Result
-	calls        int
-	attempted    map[string]bool
-	mutationArgs map[string]string
+	intentTurn string
+	intentText string
+	backend    Backend
+	tools      map[string]binding
+	Specs      []map[string]any
+	namespace  string
+	Pending    *Pending
+	seen       map[string]string
+	cache      map[string]mcp.Result
+	calls      int
+	attempted  map[string]bool
 }
 type Job struct {
 	ID, Name, Key, TurnID string
@@ -64,7 +63,7 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 	for _, name := range allowed {
 		permit[name] = true
 	}
-	s := &Session{backend: backend, tools: map[string]binding{}, namespace: namespace, seen: map[string]string{}, cache: map[string]mcp.Result{}, mutationArgs: map[string]string{}, attempted: map[string]bool{}}
+	s := &Session{backend: backend, tools: map[string]binding{}, namespace: namespace, seen: map[string]string{}, cache: map[string]mcp.Result{}, attempted: map[string]bool{}}
 	for _, tool := range discovered {
 		if !permit[tool.Name] {
 			continue
@@ -155,16 +154,10 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 	s.calls++
 	s.seen[id] = k
 	j := Job{ID: id, Name: b.tool.Name, Key: k, TurnID: turn, Args: append(json.RawMessage(nil), args...)}
-	if b.policy != mcp.ReadOnly {
-		// One mutation of each kind per logical request. Stable identity survives
-		// reconnects even if the model reformulates arguments: SQLite rejects the
-		// conflict instead of creating a second note. A deliberate new mutation
-		// requires a fresh requestId.
-		if previous := s.mutationArgs[b.tool.Name]; previous != "" && previous != k {
-			return fail("logical_request_conflict")
-		}
-		j.Key = key(s.namespace, b.tool.Name, json.RawMessage(`null`))
-	}
+	// Each distinct canonical argument set is an independent operation. Keep
+	// its key stable across model tool IDs, turns and reconnects, so identical
+	// retries cannot duplicate effects. Changed arguments are a new operation,
+	// not a safe retry of an unknown outcome.
 	if b.policy != mcp.ReadOnly {
 		if cached, ok := s.cache[j.Key]; ok {
 			return j, &cached
@@ -193,7 +186,6 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 		return fail("clarification_required")
 	}
 	if b.policy != mcp.ReadOnly {
-		s.mutationArgs[j.Name] = k
 		s.attempted[j.Key] = true
 	}
 	return j, nil

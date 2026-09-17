@@ -67,7 +67,7 @@ func finishMock(c *websocket.Conn, id string) {
 // Mock scripts choose calls explicitly. This proves host routing/data flow,
 // never Nova's ability to choose tools or interpret natural language.
 func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
-	scenarios := []string{"notes_only", "agenda_only", "note_to_agenda", "agenda_to_note", "ambiguous", "ordinary", "cancel_approved", "cancel_refused", "invalid_arguments", "retry", "spoken_create"}
+	scenarios := []string{"notes_only", "agenda_only", "note_to_agenda", "agenda_to_note", "ambiguous", "ordinary", "cancel_approved", "cancel_refused", "invalid_arguments", "retry", "spoken_create", "compound", "compound_partial", "two_events"}
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			notesPath, agendaPath, servers := multiConfig(t)
@@ -98,6 +98,8 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				}
 				phrase := "Agende Consulta fictícia em 2030-05-20 às 09:00 por uma hora"
 				switch scenario {
+				case "compound", "compound_partial":
+					phrase = "Agende reunião dia 20 de maio de 2030 às 9 horas por uma hora e salve uma nota com a pauta orçamento"
 				case "spoken_create":
 					phrase = "Agende reunião dia 18 de setembro de 2026 às 10 horas por uma hora"
 				case "ordinary":
@@ -117,6 +119,32 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 					return bridgeResult(t, c)
 				}
 				switch scenario {
+				case "compound", "compound_partial", "two_events":
+					if r := call("a1", "local_agenda_create_event", eventArgs); r.IsError {
+						t.Error(r)
+					}
+					if scenario == "two_events" {
+						userPhrase(c, "u2", "Agende outra reunião às 13 horas por uma hora")
+						args := `{"title":"Outra reunião","start":"2030-05-20T13:00:00-03:00","end":"2030-05-20T14:00:00-03:00"}`
+						if r := call("a2", "local_agenda_create_event", args); r.IsError {
+							t.Error(r)
+						}
+					} else {
+						args := `{"title":"Pauta","content":"orçamento"}`
+						if scenario == "compound_partial" {
+							args = `{"title":"Pauta"}`
+						}
+						r := call("n1", "memo_notes_create", args)
+						if r.IsError != (scenario == "compound_partial") {
+							t.Error(r)
+						}
+						if scenario == "compound" {
+							replay := call("n2", "memo_notes_create", args)
+							if replay.IsError || replay.Content[0].Text != r.Content[0].Text {
+								t.Error("compound retry", replay)
+							}
+						}
+					}
 				case "spoken_create":
 					r := call("spoken", "local_agenda_create_event", `{"title":"reunião","start":"2026-09-18T10:00:00-03:00","end":"2026-09-18T11:00:00-03:00"}`)
 					if r.IsError || mcp.Status(r) != "created" {
@@ -235,11 +263,35 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := 0
+			if scenario == "compound" || scenario == "compound_partial" {
+				want = 1
+			}
+			if scenario == "two_events" {
+				want = 2
+			}
 			if scenario == "note_to_agenda" || scenario == "ambiguous" || scenario == "retry" || scenario == "spoken_create" || strings.HasPrefix(scenario, "cancel_") {
 				want = 1
 			}
 			if len(events) != want {
 				t.Fatal("effects", events)
+			}
+			if scenario == "compound" || scenario == "compound_partial" {
+				n, err := storage.Open(notesPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				notes, err := n.List(context.Background(), "Pauta")
+				n.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+				count := 0
+				if scenario == "compound" {
+					count = 1
+				}
+				if len(notes) != count {
+					t.Fatal("note effects", notes)
+				}
 			}
 			if scenario == "cancel_approved" && events[0].Status != "cancelled" {
 				t.Fatal(events)

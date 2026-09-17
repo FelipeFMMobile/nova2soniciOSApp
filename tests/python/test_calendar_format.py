@@ -28,4 +28,7 @@ class CalendarFormatTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("2026-09-18T10:00:00-03:00", prompt)
             self.assertIn("2026-09-18T11:00:00-03:00", prompt)
             self.assertIn("grava diretamente", prompt)
+            self.assertIn("agenda.create_event e notes.create", prompt)
+            self.assertIn("sucessos e falhas", prompt)
+            self.assertIn("não são uma transação atômica", prompt)
             session.return_value.start.assert_awaited_once()

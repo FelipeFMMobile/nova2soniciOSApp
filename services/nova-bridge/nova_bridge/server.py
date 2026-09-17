@@ -34,6 +34,14 @@ DEFAULT_PROMPT = (
 )
 
 CALENDAR_FORMAT_INSTRUCTIONS = (
+    " Um único pedido pode conter várias ações: execute cada ação com a ferramenta correspondente, "
+    "inclusive criar um evento na agenda e salvar uma nota na mesma fala. Não escolha apenas uma delas. "
+    "Exemplo: Agende reunião e salve uma nota com a pauta requer agenda.create_event e notes.create. "
+    "Use os nomes reais das ferramentas disponíveis. Aguarde o resultado de todas as ações solicitadas "
+    "antes de resumir o pedido; relate separadamente sucessos e falhas, sem anunciar sucesso total se houver falha. "
+    "As ações não são uma transação atômica: não desfaça nem repita uma ação bem-sucedida para compensar outra. "
+    "Não reformule argumentos para repetir uma gravação de resultado desconhecido: isso pode duplicar efeitos. "
+    "Novos pedidos na mesma conversa podem criar outros eventos e notas. "
     " Para ferramentas de agenda, transforme a fala em argumentos estruturados ANTES da chamada. "
     "start/end são strings RFC3339 AAAA-MM-DDTHH:MM:SS com offset explícito ou Z, sem frações; "
     "não envie DD/MM/AAAA, apenas um horário, nem data por extenso nos argumentos. "
