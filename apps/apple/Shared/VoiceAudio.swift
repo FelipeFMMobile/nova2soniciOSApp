@@ -37,15 +37,24 @@ import VoiceCore
         sessionActive = true
         #endif
         if !attached { engine.attach(player); attached = true }
+        // Rebuild while stopped so previous sessions don't retain a 24 kHz output format.
+        engine.disconnectNodeOutput(player)
+        engine.disconnectNodeOutput(engine.mainMixerNode)
         if microphone { try engine.inputNode.setVoiceProcessingEnabled(true) }
+        else if engine.outputNode.isVoiceProcessingEnabled { try engine.outputNode.setVoiceProcessingEnabled(false) }
+        let captureFormat = microphone ? engine.inputNode.outputFormat(forBus: 0) : nil
+        let deviceFormat = try VoiceGraphFormat.output(microphone: captureFormat, hardware: engine.outputNode.outputFormat(forBus: 0))
+        // Pin duplex I/O first; the mixer then resamples Nova's 24 kHz player input.
+        if #available(macOS 27, iOS 27, *) { try engine.connectNode(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat) }
+        else { engine.connect(engine.mainMixerNode, to: engine.outputNode, format: deviceFormat) }
         if #available(macOS 27, iOS 27, *) { try engine.connectNode(player, to: engine.mainMixerNode, format: playbackFormat) }
         else { engine.connect(player, to: engine.mainMixerNode, format: playbackFormat) }
         let channel = AsyncStream<Data>.makeStream(bufferingPolicy: .bufferingOldest(16))
         capture = channel.continuation
         if microphone {
             let input = engine.inputNode
-            let format = input.outputFormat(forBus: 0)
-            guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceFailure.audioFormat }
+            guard let format = captureFormat, input.outputFormat(forBus: 0) == format,
+                  engine.outputNode.inputFormat(forBus: 0) == format else { throw VoiceFailure.audioFormat }
             let converter = try PCMConverter(input: format)
             let tap: AVAudioNodeTapBlock = { buffer, _ in
                 do {

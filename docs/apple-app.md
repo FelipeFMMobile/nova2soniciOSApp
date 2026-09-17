@@ -46,7 +46,13 @@ não troca o provider do backend dinamicamente.
 O cliente captura continuamente usando AVAudioEngine com processamento de voz,
 converte para PCM16 mono 16 kHz e envia quadros de 32 ms. Nova decide o fim da
 fala; não há push-to-talk por turno. O botão inicia/encerra a conversa inteira.
-Saída PCM16 mono 24 kHz é reproduzida incrementalmente. Até ~256 ms são
+Saída PCM16 mono 24 kHz é reproduzida incrementalmente. O grafo de saída do
+Voice Processor usa exatamente o formato
+de entrada do microfone, não os 24 kHz do transporte. O mixer converte o áudio do
+player para esse formato. A conexão mixer → saída é fixada antes de ligar o
+player e refeita a cada início para não herdar formatos de outra sessão. No modo
+fake, o processamento de voz é desabilitado e a saída usa o formato do dispositivo.
+Até ~256 ms são
 agendados no player; o buffer adicional é limitado a 30 s porque Nova pode
 gerar mais rápido que a reprodução. Interrupção limpa ambas as filas; áudio
 cancelado ou de outro turno é descartado. Ordem inválida/overflow encerram a
