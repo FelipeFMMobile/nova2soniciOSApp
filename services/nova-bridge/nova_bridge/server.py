@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from http import HTTPStatus
 import json
 import logging
 import os
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from websockets.asyncio.server import ServerConnection, serve
 
@@ -34,6 +36,20 @@ DEFAULT_PROMPT = (
 )
 
 
+def calendar_context(now: datetime | None = None) -> str:
+    local = (now or datetime.now(ZoneInfo("America/Sao_Paulo"))).astimezone(ZoneInfo("America/Sao_Paulo"))
+    return (
+        f" Data/hora de referência no início desta sessão: {local.isoformat(timespec='seconds')}; "
+        "fuso da agenda: America/Sao_Paulo. Resolva amanhã em relação a essa data. "
+        "Para uma data por extenso sem ano, esclareça o ano; não adivinhe. "
+        "Converta as datas da agenda para RFC3339 antes de chamar ferramentas. "
+        "Quando uma ferramenta retornar instruction, siga essa orientação. "
+        "Para confirmation_required de criação de evento, leia todos os dados "
+        "da proposta e peça exatamente Confirmo agendar em outro turno, não sim. "
+        "Não anuncie criação antes de status created."
+    )
+
+
 async def handle(connection: ServerConnection) -> None:
     session: NovaSession | None = None
 
@@ -49,7 +65,7 @@ async def handle(connection: ServerConnection) -> None:
             region=os.getenv("AWS_REGION", "us-east-1"),
             model_id=os.getenv("NOVA_MODEL_ID", "amazon.nova-2-sonic-v1:0"),
             voice_id=start.get("voiceId", os.getenv("NOVA_VOICE_ID", "carolina")),
-            system_prompt=start.get("systemPrompt", DEFAULT_PROMPT),
+            system_prompt=start.get("systemPrompt", DEFAULT_PROMPT) + calendar_context(),
             event_sink=emit,
         )
         await session.start(start.get("tools"), start.get("history"))

@@ -85,17 +85,45 @@ Criação verifica disponibilidade e conflito na mesma transação que grava eve
 e resultado de replay. Não aceita sobreposição com eventos ativos; eventos
 adjacentes podem coexistir. Cancelamento exige evento ativo existente.
 
-O filtro de intenção é conservador e específico desta POC PT-BR: o ASR final
+O filtro de intenção é conservador e específico desta POC PT-BR. O fluxo direto
+de terminal preserva a regra anterior: o ASR final
 de USER deve começar com `agende`, `marque`, `crie um evento/agendamento`,
 `quero agendar/marcar` (opcional `por favor`, ou prefixo `consulte/busque/leia … e`), conter data completa numérica
 `AAAA-MM-DD` ou `DD/MM/AAAA` e horário numérico `09:00`/`9h`. Negação,
-condicional, incerteza, citações e termos relativos como amanhã/depois bloqueiam
-criação com `clarification_required`. O modelo deve esclarecer informações
+condicional, incerteza e citações bloqueiam autorização direta. Termos relativos
+ou datas por extenso não autorizam criação direta, mas podem iniciar a proposta
+por voz descrita abaixo. O modelo deve esclarecer informações
 ambíguas; o Go não transforma linguagem livre em uma data presumida. Isso
 **não é um parser geral de intenção**: datas por extenso, pedidos compostos
 fora dessa gramática e variantes do ASR podem exigir reformulação. O teste Nova
-real precisa avaliar essa limitação antes do aceite. O schema exige título e
+real precisa avaliar essas limitações antes do aceite. O schema exige título e
 intervalo; validação semântica final de horários/disponibilidade fica no Go.
+
+### Criação por voz com proposta e confirmação
+
+Um pedido explícito como “Agende pocket amanhã às dez por uma hora” pode usar
+datas faladas/relativas. A bridge fornece data/hora de referência no início da
+sessão e fuso America/Sao_Paulo; para datas por extenso sem ano, a Nova é
+instruída a esclarecer o ano. O modelo continua responsável por interpretar a
+fala e enviar `title`, `start`, `end` estruturados. O Go verifica RFC3339,
+ordem, ausência de frações e duração máxima de oito horas antes de qualquer
+execução. Erros `invalid_arguments`/`invalid_datetime` incluem `instruction`
+com o formato esperado; não são eventos criados.
+
+Para pedidos falados fora da gramática numérica direta, o host retorna
+`confirmation_required` com a proposta congelada e validade de 60 s. A Nova
+deve ler título, data completa com ano, início/fim e fuso. Diga **Confirmo
+agendar** em outro turno; `sim`, confirmação no mesmo turno, booleano do app e
+citações não aprovam. A ferramenta só executa se a chamada posterior mantiver
+os mesmos argumentos. Recusa limpa a proposta; alteração de dados exige novo
+pedido explícito e nova confirmação. Idempotência continua evitando execução
+duplicada. Disponibilidade/conflitos permanecem validados no MCP/SQLite.
+
+Roteiro: peça o evento → confira a proposta → diga “Confirmo agendar” após a
+Nova terminar → aguarde `created` → consulte a agenda. Se os dados estiverem
+errados, diga “não” e faça novo pedido completo. Não repita criação após uma
+queda sem consultar o resultado. O filtro ainda exige verbos explícitos e
+recusa linguagem condicional/negativa; não é compreensão geral de intenção.
 
 Para cancelar, o Go congela alias, ferramenta, argumentos/alvo, turno e validade
 60s na confirmação pendente. Somente ASR final USER em turno posterior contendo
