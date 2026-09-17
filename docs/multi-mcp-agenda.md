@@ -97,6 +97,32 @@ fora dessa gramática e variantes do ASR podem exigir reformulação. O teste No
 real precisa avaliar essa limitação antes do aceite. O schema exige título e
 intervalo; validação semântica final de horários/disponibilidade fica no Go.
 
+### Diagnóstico de formatação sem alterar autorização
+
+O prompt da bridge inclui exemplo fala → argumentos RFC3339 antes da chamada
+nativa; nenhuma confirmação de criação adicional foi introduzida. O host
+valida `start/end` de criação/consultas: strings RFC3339 com offset ou Z, sem
+frações. Se falhar, retorna `invalid_datetime_format`, `fields`,
+`expected_format`, exemplo e `instruction` para corrigir a chamada. Exemplos
+não são valores padrão; o host nunca interpreta texto livre ou presume datas.
+
+Se o formato passar, mas a criação não satisfizer o filtro conservador acima,
+`clarification_required` inclui `reason=intent_not_authorized` e
+`date_format_valid=true`. Isso não é falha de conversão da data. A regra
+numérica continua ativa: este ajuste pode melhorar os argumentos da Nova, mas
+não torna datas faladas autorizadas pelo Go. Eventual mudança dessa regra é uma
+decisão separada, não parte deste ajuste.
+
+Reinicie `make dev`, abra nova conversa e no app expanda **Ferramentas MCP →
+Argumentos reais enviados pela Nova**, depois **Detalhes do resultado**. Os
+argumentos são preservados após a resposta. Para “reunião dia 18 de setembro
+de 2026 às 10 horas por uma hora”, espere `start=2026-09-18T10:00:00-03:00`
+e `end=2026-09-18T11:00:00-03:00`; ainda pode ocorrer bloqueio de intenção.
+Compartilhe ambos os trechos para distinguir os problemas. Dados de ferramenta
+ficam na tela e na evidência privada já existente, não são acrescentados aos
+logs públicos do Xcode. Testes com mocks não provam que a Nova real escolherá
+a ferramenta ou formatará corretamente em todas as tentativas.
+
 Para cancelar, o Go congela alias, ferramenta, argumentos/alvo, turno e validade
 60s na confirmação pendente. Somente ASR final USER em turno posterior contendo
 exatamente **“Confirmo cancelar agendamento”** aprova Agenda. `sim`, argumentos

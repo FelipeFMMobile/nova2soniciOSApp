@@ -12,6 +12,7 @@ public struct ToolOperation: Identifiable, Equatable, Sendable {
     public var name: String
     public var status: String
     public var details: String
+    public var arguments: String
     public var needsConfirmation: Bool
 }
 public enum VoiceEffect: Equatable, Sendable {
@@ -76,7 +77,9 @@ public struct ConversationState: Sendable {
             else { status = tool.failed ? "Falhou ou resultado incerto" : "Concluído" }
             let pending = status == "Aguardando confirmação"
             let details = event.message ?? tool.result?.pretty ?? tool.arguments?.pretty ?? ""
-            let op = ToolOperation(id: tool.operationId, name: tool.name ?? "Ferramenta MCP", status: status, details: String(details.prefix(4096)), needsConfirmation: pending)
+            let previous = operations.first { $0.id == tool.operationId }
+            let arguments = tool.arguments?.pretty ?? previous?.arguments ?? ""
+            let op = ToolOperation(id: tool.operationId, name: tool.name ?? previous?.name ?? "Ferramenta MCP", status: status, details: String(details.prefix(4096)), arguments: String(arguments.prefix(4096)), needsConfirmation: pending)
             if let index = operations.firstIndex(where: { $0.id == op.id }) { operations[index] = op } else { operations.append(op) }
             // A successful matching action can use a fresh Nova tool-use ID.
             if event.type == "tool.result" && !pending && !tool.failed {

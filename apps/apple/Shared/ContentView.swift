@@ -85,6 +85,11 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label(operation.name, systemImage: "wrench.and.screwdriver").font(.headline)
                                 Text(operation.status).font(.subheadline).foregroundStyle(operation.needsConfirmation ? .orange : accent)
+                                if !operation.arguments.isEmpty {
+                                    DisclosureGroup("Argumentos reais enviados pela Nova") {
+                                        Text(operation.arguments).font(.caption.monospaced()).textSelection(.enabled)
+                                    }
+                                }
                                 if operation.needsConfirmation { Text("Responda por voz com a confirmação solicitada pelo assistente.").font(.footnote) }
                                 DisclosureGroup("Detalhes do resultado") { Text(operation.details).font(.caption.monospaced()).textSelection(.enabled) }
                             }.padding(16).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))

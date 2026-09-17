@@ -2,6 +2,16 @@ import XCTest
 @testable import VoiceCore
 
 final class VoiceCoreTests: XCTestCase {
+    func testToolArgumentsSurviveResultWithoutArguments() throws {
+        var state = try readyState()
+        let arguments: JSONValue = .object(["start": .string("2026-09-18T10:00:00-03:00")])
+        _ = try state.handle(VoiceEvent(type: "tool.started", sessionId: "session-1", tool: VoiceTool(operationId: "op-1", name: "agenda_create_event", arguments: arguments)))
+        let original = try XCTUnwrap(state.operations.first).arguments
+        _ = try state.handle(VoiceEvent(type: "tool.result", sessionId: "session-1", tool: VoiceTool(operationId: "op-1", result: .object(["isError": .bool(true)]))))
+        XCTAssertEqual(state.operations.first?.arguments, original)
+        XCTAssertEqual(state.operations.first?.name, "agenda_create_event")
+        XCTAssertTrue(original.contains("2026-09-18T10:00:00-03:00"))
+    }
     func readyState() throws -> ConversationState {
         var state = ConversationState()
         _ = try state.handle(VoiceEvent(type: "session.ready", sessionId: "session-1"))
