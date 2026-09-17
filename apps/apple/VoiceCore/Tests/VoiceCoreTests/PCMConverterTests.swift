@@ -1,8 +1,44 @@
 import AVFoundation
+import AudioToolbox
 import XCTest
 @testable import VoiceCore
 
 final class PCMConverterTests: XCTestCase {
+    private func nineChannelFormat() throws -> AVAudioFormat {
+        let layout = try XCTUnwrap(AVAudioChannelLayout(layoutTag: kAudioChannelLayoutTag_DiscreteInOrder | 9))
+        return try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channelLayout: layout))
+    }
+    func testNineChannelsSelectChannelZeroWithoutCancellation() throws {
+        let format = try nineChannelFormat()
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4800))
+        buffer.frameLength = 4800
+        for channel in 0..<9 {
+            for frame in 0..<4800 {
+                let voice = 0.25 * sin(Float(frame) * 2 * .pi * 440 / 48000)
+                buffer.floatChannelData![channel][frame] = channel == 0 ? voice : (channel == 1 ? -voice : 0)
+            }
+        }
+        let levels = VoiceDiagnostics.channelLevels(buffer)
+        XCTAssertEqual(levels.count, 9)
+        XCTAssertGreaterThan(levels[0], 0.17)
+        XCTAssertEqual(levels[0], levels[1], accuracy: 0.0001)
+        XCTAssertEqual(levels[8], 0)
+        let pcm = try PCMConverter(input: format).convert(buffer)
+        XCTAssertGreaterThan(VoiceDiagnostics.level(pcm), 0.16)
+        XCTAssertLessThan(VoiceDiagnostics.level(pcm), 0.19)
+    }
+
+    func testNineChannelsDoNotSelectAuxiliarySignalWhenMicIsSilent() throws {
+        let format = try nineChannelFormat()
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4800))
+        buffer.frameLength = 4800
+        for channel in 0..<9 {
+            for frame in 0..<4800 { buffer.floatChannelData![channel][frame] = channel == 8 ? 0.5 : 0 }
+        }
+        let pcm = try PCMConverter(input: format).convert(buffer)
+        XCTAssertEqual(VoiceDiagnostics.level(pcm), 0)
+    }
+
     func testStereo48kBecomesBoundedMono16kPCM16() throws {
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1536))

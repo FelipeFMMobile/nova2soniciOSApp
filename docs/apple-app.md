@@ -171,6 +171,11 @@ Execute pelo Xcode e abra **View → Debug Area → Activate Console**. Filtre p
 `com.sts.NovaVoice`, categorias `Audio` e `Gateway`:
 
 - `Capture format`: formato de entrada e processamento de voz.
+- `RAW channelsRMS=[...] selectedChannel=0`: nível Float32 de cada canal antes
+  da conversão, no primeiro buffer e aproximadamente a cada segundo.
+- `CONVERTED selectedChannel=0 rms=...`: nível do mesmo buffer após conversão.
+  O conversor usa `channelMap=[0]`, sem downmix implícito. Não escolhe
+  automaticamente o canal mais alto, que poderia ser referência de reprodução.
 - `PCM buffers=... bytes=... sentFrames=... rms=... stalled=...`: resumo por segundo.
 - `SEND` e `RECV`: tipo, sequência e tamanho Base64, sem payload. Áudio é
   registrado no primeiro frame e a cada 50 frames para não sobrecarregar o console.
@@ -182,3 +187,10 @@ Se houver problema, compartilhe o trecho desses resumos enquanto fala por
 10–15 s. Buffers zerados indicam ausência de PCM no consumidor; RMS próximo de
 zero com buffers aumentando indica sinal silencioso/baixo após conversão;
 frames enviados aumentando permite investigar o gateway/bridge em seguida.
+
+Se `RAW` tiver sinal no canal 0 e `CONVERTED` permanecer zero, a conversão ainda
+precisa ser investigada. Se todos os canais `RAW` estiverem zerados, o silêncio
+já vem da captura/processamento de voz. Se apenas outro canal tiver sinal,
+compartilhe os níveis para revisar a rota antes de alterar o canal selecionado.
+A seleção explícita é coberta por testes sintéticos de nove canais; a resposta
+falada real da Nova ainda requer validação no dispositivo.
