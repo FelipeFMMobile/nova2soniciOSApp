@@ -3,5 +3,6 @@ SWIFT_STRICT_CONCURRENCY = complete
 MACOSX_DEPLOYMENT_TARGET = 26.0
 IPHONEOS_DEPLOYMENT_TARGET = 27.0
 STS_GATEWAY_URL = ws:/$()/127.0.0.1:8080/v1/voice
-STS_GATEWAY_TOKEN =
+// Development default only; override for shared networks or production.
+STS_GATEWAY_TOKEN = local
 STS_PROVIDER = nova

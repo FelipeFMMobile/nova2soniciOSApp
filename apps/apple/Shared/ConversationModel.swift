@@ -6,7 +6,7 @@ import OSLog
 @MainActor final class ConversationModel: ObservableObject {
     @Published var conversation = ConversationState()
     @Published var url = Bundle.main.object(forInfoDictionaryKey: "STSGatewayURL") as? String ?? "ws://127.0.0.1:8080/v1/voice"
-    @Published var token = Bundle.main.object(forInfoDictionaryKey: "STSGatewayToken") as? String ?? ""
+    @Published var token = Bundle.main.object(forInfoDictionaryKey: "STSGatewayToken") as? String ?? "local"
     @Published var provider = Bundle.main.object(forInfoDictionaryKey: "STSProvider") as? String ?? "nova"
     @Published private(set) var active = false
     @Published private(set) var stopping = false

@@ -11,19 +11,24 @@ continuam na etapa 5, depois do aceite/merge desta branch.
 Na raiz do repositório:
 
 ```bash
-STS_PROVIDER=fake STS_DEVELOPMENT_TOKEN=local-demo-token make gateway
+STS_PROVIDER=fake STS_DEVELOPMENT_TOKEN=local make gateway
 open apps/apple/NovaVoice.xcodeproj
 ```
 
 No Xcode escolha `NovaVoice` → `My Mac` ou um iPhone Simulator iOS 27 e Run.
 No app abra **Conexão local**, informe `ws://127.0.0.1:8080/v1/voice`, token
-`local-demo-token` e provider **Fake · teste local**. Toque **Iniciar conversa**:
+`local` (já preenchido por padrão) e provider **Fake · teste local**. Toque **Iniciar conversa**:
 o gateway responde com transcrições explicitamente simuladas e um tom, não voz.
 Esse modo não solicita microfone, não transcreve fala e não conecta à AWS.
 Encerre no botão e pare o gateway com Ctrl+C.
 
 O provider escolhido no app deve ser o mesmo selecionado no gateway; a POC
 não troca o provider do backend dinamicamente.
+
+O token padrão nos apps macOS/iOS e no assistente `make dev` é `local`, apenas
+para desenvolvimento. A tela permite alterar o token; um valor configurado em
+`Debug.local.xcconfig` tem precedência sobre o padrão. Use um token forte ao
+expor o gateway na rede local; o backend deve usar o mesmo valor.
 
 ## Nova + Notes + Agenda
 
