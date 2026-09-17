@@ -127,6 +127,9 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 		resolved := name
 		if b, ok := s.tools[name]; ok {
 			resolved = b.tool.Name
+			if b.original == "agenda.create_event" && code == "clarification_required" {
+				r = mcp.TextResult(map[string]any{"status": "error", "code": code, "reason": "intent_not_authorized", "date_format_valid": true, "instruction": "A formatação RFC3339 dos argumentos passou; o bloqueio é de autorização/intenção, não de data. Nesta POC a transcrição final USER deve conter pedido explícito, data completa numérica e horário numérico no mesmo turno. Datas por extenso/relativas ou sim isolado não satisfazem esse filtro. Explique a limitação; não fique reformatando datas corretas, não anuncie sucesso e não invente um novo fluxo de confirmação."}, true)
+			}
 		}
 		return Job{ID: id, Name: resolved, TurnID: turn, Args: append(json.RawMessage(nil), args...)}, &r
 	}
@@ -136,6 +139,11 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 	b, ok := s.tools[name]
 	if !ok {
 		return fail("tool_not_allowed")
+	}
+	if b.original == "agenda.create_event" || b.original == "agenda.list_slots" || b.original == "agenda.list_events" {
+		if result := agendaFormatError(args); result != nil {
+			return Job{ID: id, Name: b.tool.Name, TurnID: turn, Args: append(json.RawMessage(nil), args...)}, result
+		}
 	}
 	if mcp.Validate(b.schema, args) != nil {
 		return fail("invalid_arguments")
