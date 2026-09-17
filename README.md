@@ -380,6 +380,17 @@ See [MCP setup, safety and live results](docs/mcp-integration.md).
 
 ## Consultar Notes e Agenda na mesma conversa
 
+Você também pode pedir duas gravações em uma fala, por exemplo: “Agende reunião
+dia 18 de setembro de 2026 às 10 horas por uma hora e salve uma nota chamada
+Pauta com o conteúdo revisar orçamento”. A Nova recebe instruções para chamar
+Agenda e Notes e resumir os resultados de ambas. O app mostra cada chamada MCP
+separadamente. Não há transação atômica entre os bancos: se uma ação falhar, a
+outra não é desfeita. A seleção das duas ferramentas deve ser validada por voz
+no ambiente AWS; os testes automatizados usam Nova simulada e MCPs reais.
+Novos eventos e notas diferentes podem ser criados sem reiniciar a conversa.
+Repetições com argumentos idênticos não duplicam a gravação; reformulações
+com argumentos diferentes não são consideradas retries equivalentes.
+
 Esta demo usa dois MCPs reais, dados fictícios e seleção automática do Nova.
 A chamada conjunta foi validada: Notes retornou o código **9274** e Agenda uma
 reunião em **16/05/2030, 10–11h America/Sao_Paulo**. A preparação por voz e a

@@ -131,13 +131,20 @@ confirmação de terminal aceita em v0.5.0. Nenhuma pendência é sucesso.
 
 ## Retry, falhas e limites
 
-Uma mutação de cada alias/tool por `requestId`: chaves incluem requestId e nome
-host completo, evitando colisões Notes/Agenda. Outra ação deliberada da mesma
-tool precisa de novo requestId. Argumentos reformulados no mesmo requestId são
-conflito; sucesso é replay do resultado durável, não segundo efeito. Não use
+Várias mutações por `requestId`: chaves incluem requestId, nome host completo e
+argumentos JSON canonizados. Pedidos diferentes podem criar outros eventos e
+notas na mesma conversa. Argumentos idênticos (mesmo que a ordem das chaves mude)
+reproduzem o resultado anterior; argumentos diferentes são uma nova operação.
+Não reformule argumentos para retry de resultado desconhecido: isso pode duplicar efeitos.
+Para criar deliberadamente uma cópia idêntica, use outro requestId. Não use
 novo requestId para retry após resultado desconhecido. Mudança de alias muda o
 namespace: mantenha aliases estáveis para retry. Os ledgers são específicos dos
 servidores Go desta POC; MCPs genéricos podem ignorar os metadados host.
+
+Compatibilidade: a chave anterior era única por ferramenta/requestId, sem
+argumentos. O novo formato não reaproveita esses registros antigos. Não faça
+retry de uma operação anterior à atualização sem consultar os bancos primeiro;
+reinicie gateway e bridge para novas conversas. Nenhum banco é apagado.
 
 Não há restart nem reexecução automática de mutações. Durante a sessão,
 chamadas concorrentes/repetidas da mesma mutação ficam bloqueadas; resultado de

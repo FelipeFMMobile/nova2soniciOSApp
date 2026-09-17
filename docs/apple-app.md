@@ -69,9 +69,9 @@ reinicie manualmente. Não há reconexão automática nem replay de ações.
 
 ### Idempotência e resultados desconhecidos
 
-Cada início explícito cria um novo `requestId`; há uma mutação de cada
-alias/tool por pedido, limite atual do backend. Outra ação deliberada da mesma
-tool requer uma nova conversa. Se a rede cair durante uma mutação, **não repita
+Cada início explícito cria um novo `requestId`. A conversa permite várias ações:
+argumentos diferentes são operações distintas; argumentos idênticos para a mesma
+tool reutilizam o resultado anterior. Se a rede cair durante uma mutação, **não repita
 a ação iniciando outra conversa**: um novo requestId pode duplicar o efeito.
 Consulte Notes/Agenda primeiro; para retry durável use o cliente de terminal
 com o requestId original (copiável em **Identificador do pedido**) conforme o runbook MCP. Recuperação explícita pelo

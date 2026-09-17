@@ -132,10 +132,11 @@ below is specific to the notes server, not universal MCP behavior.
 - Trusted clients may alternatively send `tool.confirm` with operationId and
   boolean approved; they cannot choose a different tool/target in that event.
 - `requestId` is a client-generated logical request identity in session.start.
-  Reuse it on retry; choose a fresh ID for a deliberately new mutation. The
-  terminal generates one unless `-request-id` is supplied. This POC permits
-  one notes creation and one deletion per logical request. Reusing a request ID
-  with changed arguments fails instead of creating an extra note.
+  Reuse it and the exact arguments on retry. The terminal generates one unless
+  `-request-id` is supplied. Different canonical arguments identify separate
+  operations within the same conversation; identical arguments replay the
+  earlier result. Changed wording is not deduplicated as a semantic retry.
+  Use a fresh ID only for a deliberately identical new effect, not an unknown outcome.
 - The notes server receives idempotency/approval through host-only `_meta`,
   never through the model schema. SQLite commits each mutation and its retry
   result atomically. Replay survives subprocess/gateway restarts.
