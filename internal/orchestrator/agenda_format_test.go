@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -8,7 +9,25 @@ import (
 	"stsmodel.local/poc/internal/mcp"
 )
 
-func TestAgendaMalformedFormatIsDistinctFromIntentRejection(t *testing.T) {
+func TestAgendaDirectCreationWithoutObservedUserTranscript(t *testing.T) {
+	s, backend := multiSetup(t)
+	args := json.RawMessage(`{"title":"reunião","start":"2026-09-18T10:00:00-03:00","end":"2026-09-18T11:00:00-03:00"}`)
+	job, result := s.Plan("direct", "local_agenda_create_event", "u", args)
+	if result != nil || s.Pending != nil {
+		t.Fatal("must create without transcript or confirmation", result)
+	}
+	resultValue := s.Execute(context.Background(), job)
+	s.Complete(job, resultValue)
+	if resultValue.IsError || mcp.Status(resultValue) != "created" || backend.calls != 1 {
+		t.Fatal(resultValue)
+	}
+	_, result = s.Plan("retry", "local_agenda_create_event", "u", args)
+	if result == nil || result.IsError || backend.calls != 1 {
+		t.Fatal("retry must not duplicate", result)
+	}
+}
+
+func TestAgendaMalformedFormatIsRejectedButValidCallNeedsNoASRIntent(t *testing.T) {
 	s, backend := multiSetup(t)
 	s.ObserveUser("u", "Talvez agende reunião dia 18 de setembro de 2026 às dez por uma hora")
 	bad := json.RawMessage(`{"title":"reunião","start":"18 de setembro de 2026 às 10 horas","end":"2026-09-18 11:00"}`)
@@ -18,13 +37,11 @@ func TestAgendaMalformedFormatIsDistinctFromIntentRejection(t *testing.T) {
 	}
 	valid := json.RawMessage(`{"title":"reunião","start":"2026-09-18T10:00:00-03:00","end":"2026-09-18T11:00:00-03:00"}`)
 	_, result = s.Plan("fixed", "local_agenda_create_event", "u", valid)
-	if result == nil || !result.IsError || !strings.Contains(result.Content[0].Text, "intent_not_authorized") || !strings.Contains(result.Content[0].Text, `"date_format_valid":true`) || s.Pending != nil || backend.calls != 0 {
-		t.Fatal("must not change authorization or create proposal", result)
-	}
-	s.ObserveUser("u2", "Agende reunião dia 18 de setembro de 2026 às 10 horas por uma hora")
-	_, result = s.Plan("allowed", "local_agenda_create_event", "u2", valid)
 	if result != nil {
-		t.Fatal("spoken date intent must be allowed", result)
+		t.Fatal("valid call must not require ASR intent", result)
+	}
+	if s.Pending != nil || backend.calls != 0 {
+		t.Fatal("planning must not execute or request confirmation")
 	}
 }
 

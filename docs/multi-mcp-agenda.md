@@ -85,17 +85,15 @@ Criação verifica disponibilidade e conflito na mesma transação que grava eve
 e resultado de replay. Não aceita sobreposição com eventos ativos; eventos
 adjacentes podem coexistir. Cancelamento exige evento ativo existente.
 
-O filtro de intenção é conservador e específico desta POC PT-BR: o ASR final
-de USER deve começar com `agende`, `marque`, `crie um evento/agendamento`,
-`quero agendar/marcar` (opcional `por favor`, ou prefixo `consulte/busque/leia … e`).
-Não é mais exigido que data/horário sejam numéricos na transcrição. Negação,
-condicional, incerteza e citações bloqueiam
-criação com `clarification_required`. O modelo deve esclarecer informações
-ambíguas; o Go não transforma linguagem livre em uma data presumida. Isso
-**não é um parser geral de intenção**: pedidos compostos
-fora dessa gramática e variantes do ASR podem exigir reformulação. O teste Nova
-real precisa avaliar essa limitação antes do aceite. O schema exige título e
-intervalo; validação semântica final de horários/disponibilidade fica no Go.
+A criação de eventos nesta POC é direta: uma chamada da Nova a
+`agenda.create_event` com argumentos válidos pode gravar sem checar a frase
+USER, sem filtro de pedido explícito/negação e sem confirmação adicional.
+A escolha da ferramenta fica a cargo do modelo; não há garantia determinística
+contra chamadas indevidas. O schema exige título e intervalo; RFC3339,
+disponibilidade, conflitos e idempotência continuam validados no backend.
+Por compatibilidade, a configuração ainda usa a chave de política
+`explicit_intent`, mas o built-in `agenda.create_event` não aplica o filtro ASR.
+Esta exceção não vale para outras ferramentas ou para cancelamento.
 
 ### Diagnóstico de formatação e intenção
 
@@ -106,11 +104,8 @@ frações. Se falhar, retorna `invalid_datetime_format`, `fields`,
 `expected_format`, exemplo e `instruction` para corrigir a chamada. Exemplos
 não são valores padrão; o host nunca interpreta texto livre ou presume datas.
 
-Se o formato passar, mas a criação não satisfizer o filtro conservador acima,
-`clarification_required` inclui `reason=intent_not_authorized` e
-`date_format_valid=true`. Isso não é falha de conversão da data. Um pedido
-explícito no turno atual com argumentos válidos pode gravar imediatamente,
-mesmo com data por extenso, sem nova confirmação. O Go confia nos instantes
+Criação não retorna mais `clarification_required` por intenção ASR. Uma chamada
+com argumentos válidos pode gravar imediatamente. O Go confia nos instantes
 interpretados pela Nova; não compara a data dos argumentos com a fala. Formato
 válido não garante interpretação correta: confira o evento criado. Cancelamento
 continua exigindo confirmação posterior e disponibilidade/idempotência seguem

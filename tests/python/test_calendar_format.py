@@ -27,5 +27,5 @@ class CalendarFormatTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(prompt, "CUSTOM" + CALENDAR_FORMAT_INSTRUCTIONS)
             self.assertIn("2026-09-18T10:00:00-03:00", prompt)
             self.assertIn("2026-09-18T11:00:00-03:00", prompt)
-            self.assertIn("intent_not_authorized", prompt)
+            self.assertIn("grava diretamente", prompt)
             session.return_value.start.assert_awaited_once()

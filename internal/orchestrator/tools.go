@@ -89,7 +89,7 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 			switch original {
 			case "notes.list":
 				policy = mcp.ReadOnly
-			case "notes.create":
+			case "notes.create", "agenda.create_event":
 				policy = mcp.ExplicitIntent
 			default:
 				policy = mcp.ConfirmLater
@@ -127,9 +127,6 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 		resolved := name
 		if b, ok := s.tools[name]; ok {
 			resolved = b.tool.Name
-			if b.original == "agenda.create_event" && code == "clarification_required" {
-				r = mcp.TextResult(map[string]any{"status": "error", "code": code, "reason": "intent_not_authorized", "date_format_valid": true, "instruction": "A formatação RFC3339 dos argumentos passou; falta um pedido explícito de agendamento na transcrição final USER do turno atual, sem negação, incerteza ou citação. Datas podem ser faladas por extenso: não peça formato numérico ao usuário. Sim isolado não é pedido de criação. Não anuncie sucesso e não invente confirmação adicional."}, true)
-			}
 		}
 		return Job{ID: id, Name: resolved, TurnID: turn, Args: append(json.RawMessage(nil), args...)}, &r
 	}
@@ -190,7 +187,9 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 			return j, &r
 		}
 	}
-	if b.policy == mcp.ExplicitIntent && b.original != "notes.create" && (s.intentTurn != turn || !explicitAgendaIntent(s.intentText)) {
+	// Built-in agenda creation is direct for this POC: trust the model's tool
+	// selection, while preserving schema, dates, storage rules and idempotency.
+	if b.policy == mcp.ExplicitIntent && b.original != "notes.create" && b.original != "agenda.create_event" && (s.intentTurn != turn || !explicitAgendaIntent(s.intentText)) {
 		return fail("clarification_required")
 	}
 	if b.policy != mcp.ReadOnly {

@@ -153,7 +153,7 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				case "ambiguous":
 					finishMock(c, "pre")
 					userPhrase(c, "u2", "talvez marque algo amanhã")
-					if r := call("a1", "local_agenda_create_event", eventArgs); !r.IsError || !strings.Contains(r.Content[0].Text, "clarification_required") {
+					if r := call("a1", "local_agenda_create_event", eventArgs); r.IsError || mcp.Status(r) != "created" {
 						t.Error(r)
 					}
 				case "ordinary": // no scripted toolUse: verifies gateway doesn't invent calls
@@ -235,7 +235,7 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := 0
-			if scenario == "note_to_agenda" || scenario == "retry" || scenario == "spoken_create" || strings.HasPrefix(scenario, "cancel_") {
+			if scenario == "note_to_agenda" || scenario == "ambiguous" || scenario == "retry" || scenario == "spoken_create" || strings.HasPrefix(scenario, "cancel_") {
 				want = 1
 			}
 			if len(events) != want {
