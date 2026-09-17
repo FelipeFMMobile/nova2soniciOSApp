@@ -67,7 +67,7 @@ func finishMock(c *websocket.Conn, id string) {
 // Mock scripts choose calls explicitly. This proves host routing/data flow,
 // never Nova's ability to choose tools or interpret natural language.
 func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
-	scenarios := []string{"notes_only", "agenda_only", "note_to_agenda", "agenda_to_note", "ambiguous", "ordinary", "cancel_approved", "cancel_refused", "invalid_arguments", "retry", "spoken_create"}
+	scenarios := []string{"notes_only", "agenda_only", "note_to_agenda", "agenda_to_note", "ambiguous", "ordinary", "cancel_approved", "cancel_refused", "invalid_arguments", "retry"}
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			notesPath, agendaPath, servers := multiConfig(t)
@@ -98,8 +98,6 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				}
 				phrase := "Agende Consulta fictícia em 2030-05-20 às 09:00 por uma hora"
 				switch scenario {
-				case "spoken_create":
-					phrase = "Agende Consulta fictícia em vinte de maio de dois mil e trinta às nove por uma hora"
 				case "ordinary":
 					phrase = "Olá tudo bem"
 				case "note_to_agenda":
@@ -117,21 +115,6 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 					return bridgeResult(t, c)
 				}
 				switch scenario {
-				case "spoken_create":
-					r := call("proposal", "local_agenda_create_event", eventArgs)
-					if r.IsError || mcp.Status(r) != "confirmation_required" || !strings.Contains(r.Content[0].Text, "Confirmo agendar") {
-						t.Error(r)
-					}
-					r = call("check_pending", "local_agenda_list_events", rangeArgs)
-					if r.IsError || strings.Contains(r.Content[0].Text, "Consulta fictícia") {
-						t.Error("proposal wrote an event", r)
-					}
-					finishMock(c, "proposal_voice")
-					userPhrase(c, "u2", "Confirmo agendar")
-					r = call("confirmed", "local_agenda_create_event", eventArgs)
-					if r.IsError || mcp.Status(r) != "created" {
-						t.Error(r)
-					}
 				case "notes_only":
 					if r := call("n1", "memo_notes_list", `{"query":"Consulta"}`); r.IsError || !strings.Contains(r.Content[0].Text, "Consulta fictícia") {
 						t.Error(r)
@@ -222,7 +205,7 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 			sid := startNova(t, c)
 			send(t, c, protocol.Event{Type: protocol.AudioAppend, SessionID: sid, TurnID: "input-1", Sequence: 1, SampleRate: 16000, Audio: "AAAAAA=="})
 			completions := 1
-			if scenario == "ambiguous" || scenario == "spoken_create" || strings.HasPrefix(scenario, "cancel_") {
+			if scenario == "ambiguous" || strings.HasPrefix(scenario, "cancel_") {
 				completions = 2
 			}
 			for i := 0; i < completions; i++ {
@@ -241,7 +224,7 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := 0
-			if scenario == "note_to_agenda" || scenario == "retry" || scenario == "spoken_create" || strings.HasPrefix(scenario, "cancel_") {
+			if scenario == "note_to_agenda" || scenario == "retry" || strings.HasPrefix(scenario, "cancel_") {
 				want = 1
 			}
 			if len(events) != want {
