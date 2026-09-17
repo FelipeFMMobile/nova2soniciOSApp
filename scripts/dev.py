@@ -7,7 +7,6 @@ import getpass
 import json
 import os
 from pathlib import Path
-import secrets
 import shlex
 import shutil
 import signal
@@ -297,10 +296,12 @@ def main() -> int:
         print("Atenção: ws:// envia áudio/token sem TLS. Use somente Wi-Fi privado confiável; ponte permanece privada.")
         if not yes("Autoriza expor o gateway na rede local?"):
             return 0
-    prompt = "Token local (Enter gera um token forte; não é chave AWS): "
-    token = (getpass.getpass(prompt) if sys.stdin.isatty() else input(prompt)) or secrets.token_urlsafe(24)
+    prompt = "Token local [local] (Enter usa local; não é chave AWS): "
+    token = (getpass.getpass(prompt) if sys.stdin.isatty() else input(prompt)) or "local"
     if len(token) > 4096 or any(ord(char) <= 32 or ord(char) >= 127 for char in token):
         raise RuntimeError("Token inválido.")
+    if lan and token == "local":
+        print("Atenção: o token padrão é previsível. Use outro token para acesso pela rede local.")
     selected = servers(mode, fixtures)
     env = environment("nova" if nova else "fake", profile, lan, token, selected, args.gateway_port, args.bridge_port)
     print(f"\nResumo: provider={env['STS_PROVIDER']}, região=us-east-1, gateway={env['STS_GATEWAY_ADDRESS']}")

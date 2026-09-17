@@ -112,6 +112,14 @@ class DevTests(unittest.TestCase):
             self.assertEqual(dev.main(), 0)
         self.assertEqual(launch.call_args.args[0]["AWS_PROFILE"], "default")
 
+    def test_enter_selects_local_token(self):
+        with patch("builtins.input", side_effect=["1", "1", "", "s"]), \
+             patch.object(sys.stdin, "isatty", return_value=False), \
+             patch.object(sys, "argv", ["dev.py"]), \
+             patch.object(dev, "run") as launch:
+            self.assertEqual(dev.main(), 0)
+        self.assertEqual(launch.call_args.args[0]["STS_DEVELOPMENT_TOKEN"], "local")
+
     def test_decline_does_not_start_services(self):
         result = subprocess.run([sys.executable, str(ROOT / "scripts/dev.py")],
                                 input="1\n1\ntest-token\nn\n", text=True, capture_output=True, timeout=10)

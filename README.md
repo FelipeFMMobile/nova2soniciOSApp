@@ -30,7 +30,8 @@ O assistente pergunta:
 3. MCPs: nenhum, Notes, Agenda ou ambos.
 4. Se deseja dados fictícios na Agenda (padrão: não).
 5. Mac/Simulator (loopback) ou iPhone físico (rede local, com confirmação).
-6. Token local: digite um ou pressione Enter para gerar um token forte.
+6. Token local: pressione Enter para usar `local`, ou digite outro. O padrão
+   é apenas para desenvolvimento; use um token forte para acesso pela rede local.
 
 Após o resumo e sua confirmação, verifica ferramentas/portas, autenticação AWS
 (Nova), compila os binários e inicia bridge + gateway supervisionados no mesmo
