@@ -64,6 +64,15 @@ class DevTests(unittest.TestCase):
         self.assertIn("MCPs: memo, local; fixtures=não", result.stdout)
         self.assertIn("Dry-run: sem AWS", result.stdout)
         self.assertNotIn("test-token", result.stdout)
+        self.assertIn("Perfil AWS existente [default]", result.stdout)
+
+    def test_enter_selects_default_aws_profile(self):
+        with patch("builtins.input", side_effect=["2", "", "4", "n", "1", "test-token", "s"]), \
+             patch.object(sys.stdin, "isatty", return_value=False), \
+             patch.object(sys, "argv", ["dev.py"]), \
+             patch.object(dev, "run") as launch:
+            self.assertEqual(dev.main(), 0)
+        self.assertEqual(launch.call_args.args[0]["AWS_PROFILE"], "default")
 
     def test_decline_does_not_start_services(self):
         result = subprocess.run([sys.executable, str(ROOT / "scripts/dev.py")],

@@ -204,7 +204,7 @@ def main() -> int:
         parser.error("Use portas distintas entre 1 e 65535.")
     print("Nova Voice · assistente de ambiente local")
     nova = choose("Qual ambiente deseja iniciar?", ["Fake — sem microfone/AWS/MCPs", "Nova 2 Sonic — AWS + MCPs opcionais"], 2) == 2
-    profile = (input("Perfil AWS existente [TerraformUser]: ").strip() or "TerraformUser") if nova else "default"
+    profile = (input("Perfil AWS existente [default]: ").strip() or "default") if nova else "default"
     if len(profile) > 128 or any(ord(char) < 32 for char in profile):
         raise RuntimeError("Nome de perfil inválido.")
     mode = choose("Quais MCPs habilitar?", ["Nenhum", "Notes", "Agenda", "Notes + Agenda"], 4) if nova else 1

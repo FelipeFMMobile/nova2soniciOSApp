@@ -24,7 +24,9 @@ make dev
 O assistente pergunta:
 
 1. Fake (sem AWS/microfone/MCPs) ou Nova 2 Sonic.
-2. Perfil AWS existente, com `TerraformUser` como padrão para Nova.
+2. Perfil AWS existente, com `default` como padrão para Nova (perfil usado nos
+   testes reais). Para outro perfil, digite seu nome; perfis podem apontar para
+   contas diferentes mesmo quando o usuário IAM tem o mesmo nome.
 3. MCPs: nenhum, Notes, Agenda ou ambos.
 4. Se deseja dados fictícios na Agenda (padrão: não).
 5. Mac/Simulator (loopback) ou iPhone físico (rede local, com confirmação).
@@ -68,7 +70,7 @@ python3 scripts/dev.py --gateway-port 8082 --bridge-port 8092
 
 Os comandos manuais abaixo continuam disponíveis para diagnóstico.
 
-### Início rápido — perfil existente `TerraformUser`
+### Início rápido — perfil existente `default`
 
 Se as dependências e permissões IAM já estão configuradas, use diretamente os
 dois blocos abaixo. Não é necessário criar outro perfil nem executar
@@ -80,12 +82,12 @@ dois blocos abaixo. Não é necessário criar outro perfil nem executar
 ```bash
 cd /Users/felipemenezes/Codes/AIproj/StsModel
 
-export AWS_PROFILE=TerraformUser
+export AWS_PROFILE=default
 export AWS_REGION=us-east-1
 export NOVA_MODEL_ID=amazon.nova-2-sonic-v1:0
 export NOVA_VOICE_ID=carolina
 
-aws sts get-caller-identity --profile TerraformUser --region us-east-1
+aws sts get-caller-identity --profile default --region us-east-1
 make nova-bridge
 ```
 
@@ -323,7 +325,7 @@ Terminal 1 — private Python/Bedrock bridge:
 
 ```bash
 make nova-install
-export AWS_PROFILE=TerraformUser # or your existing authorized profile
+export AWS_PROFILE=default # or your existing authorized profile
 export AWS_REGION=us-east-1
 make nova-bridge
 ```
