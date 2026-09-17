@@ -212,3 +212,28 @@ erro específico de envio. As filas de captura e reprodução continuam limitada
 e agora exibem mensagens próprias. Os logs mostram `SEND waiting for queue
 capacity`, recuperação ou timeout. Essa tolerância não garante operação sob
 indisponibilidade prolongada; valide novamente a conversa real com ferramentas.
+
+### Isolamento da interface e alerta de prioridade
+
+`VoiceAudio` confina engine/player e todos os comandos (start, enqueue, stop,
+clear e callbacks de reprodução) a uma fila serial de QoS Default. O app não
+usa `DispatchQueue.sync` nem executa `player.stop()` no MainActor. Essa fila
+acompanha o QoS dos serviços internos de controle de áudio; não muda a prioridade
+de renderização escolhida pelo sistema. Start retorna de forma assíncrona e
+comandos mantêm ordem FIFO. A geração de reprodução ainda rejeita callbacks
+antigos após interrupção.
+
+`VoiceNetworkActor` executa packetização PCM, Base64, JSON, writer/reader do
+WebSocket e espera de capacidade fora do MainActor. `VoiceInputPump` mantém
+sequência e estatísticas. Somente eventos de conversa/erros e snapshots do
+medidor (até 5 Hz) chegam à UI; mudanças de playing são deduplicadas. O encerramento
+cancela o consumidor e a próxima conexão aguarda a limpeza da anterior.
+
+`Playback stop duration=... executor=audio-serial` permite medir a chamada
+apontada pelo Thread Performance Checker. `SEND slow duration=... queue=...`
+registra envios acima de 100 ms. Limites de captura/envio/reprodução permanecem
+ativos: indisponibilidade sustentada ainda pode encerrar a conversa com erro
+específico, sem crescimento ilimitado da fila de PCM. Builds e gateway fake não
+comprovam ausência de avisos internos CoreAudio no dispositivo real. Valide
+conversa de alguns minutos, barge-in e vários ciclos iniciar/encerrar no Xcode;
+se falhar, compartilhe os últimos resumos PCM/SEND e a duração do stop.

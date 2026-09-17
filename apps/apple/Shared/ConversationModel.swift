@@ -20,16 +20,14 @@ import OSLog
     @Published private(set) var audioWarning: String?
     private let audioLog = Logger(subsystem: "com.sts.NovaVoice", category: "Audio")
     private var diagnosticsTask: Task<Void, Never>?
-    private var lastCapture: Date?
-    private var lastSignal: Date?
+    private var inputPump: VoiceInputPump?
+    private var cleanupTask: Task<Void, Never>?
     private let socket = VoiceSocket()
     private let audio = VoiceAudio()
     private var inputTask: Task<Void, Never>?
     private var startTask: Task<Void, Never>?
     private var stopTask: Task<Void, Never>?
-    private var frames = AudioFrames()
     private var inputTurn = UUID().uuidString
-    private var sequence: UInt64 = 0
     private var epoch = 0
     private var observers: [NSObjectProtocol] = []
     private var testMode = false
@@ -43,12 +41,9 @@ import OSLog
             token = ProcessInfo.processInfo.environment["STS_TEST_TOKEN"] ?? "apple-test-token"
         }
         #endif
-        socket.onEvent = { [weak self] event in self?.receive(event) }
-        socket.onFailure = { [weak self] error in self?.fail(error) }
-        socket.onSent = { [weak self] event in
-            if event.type == "audio.append" { self?.sentFrames += 1 }
+        audio.setPlayingCallback { [weak self] value in
+            guard let self else { return }; self.playing = self.active && value
         }
-        audio.onPlayingChanged = { [weak self] value in self?.playing = value }
         #if os(iOS)
         for name in [AVAudioSession.didBecomeInactiveNotification, AVAudioSession.routeChangeNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
@@ -73,7 +68,7 @@ import OSLog
         guard !active else { return }
         errorMessage = nil
         inputLevel = 0; capturedBuffers = 0; capturedBytes = 0; sentFrames = 0
-        audioWarning = nil; lastCapture = nil; lastSignal = nil
+        audioWarning = nil
         do { _ = try GatewayConfiguration.validate(url) } catch { fail(.invalidConfiguration); return }
         epoch += 1; let generation = epoch
         active = true; stopping = false
@@ -81,12 +76,24 @@ import OSLog
         let request = UUID().uuidString; requestId = request
         startTask = Task { [weak self] in
             guard let self else { return }
+            await self.cleanupTask?.value
+            guard !Task.isCancelled, self.epoch == generation else { return }
             if self.provider == "nova", !(await VoiceAudio.requestPermission()) {
                 if self.epoch == generation { self.fail(.microphoneDenied) }; return
             }
             guard !Task.isCancelled, self.epoch == generation else { return }
-            do { try self.socket.connect(url: self.url, token: self.token, provider: self.provider, requestId: request) }
-            catch { self.fail((error as? VoiceFailure) ?? .disconnected) }
+            do {
+                await self.socket.configure(onEvent: { [weak self] event in
+                    guard self?.epoch == generation else { return }; self?.receive(event)
+                }, onFailure: { [weak self] error in
+                    guard self?.epoch == generation else { return }; self?.fail(error)
+                })
+                guard !Task.isCancelled, self.epoch == generation else { return }
+                try await self.socket.connect(url: self.url, token: self.token, provider: self.provider, requestId: request)
+            } catch {
+                guard !Task.isCancelled, self.epoch == generation else { return }
+                self.fail((error as? VoiceFailure) ?? .disconnected)
+            }
         }
     }
 
@@ -96,10 +103,15 @@ import OSLog
         inputTask?.cancel(); inputTask = nil; audio.stop()
         diagnosticsTask?.cancel(); diagnosticsTask = nil; inputLevel = 0
         guard let session = conversation.sessionId else { finish(); return }
-        do { try socket.send(VoiceEvent(type: "session.stop", sessionId: session)) }
-        catch { finish(); return }
+        let generation = epoch
         stopTask = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(2)); self?.finish() } catch {}
+            guard let self else { return }
+            do {
+                try await self.socket.send(VoiceEvent(type: "session.stop", sessionId: session))
+                try await Task.sleep(for: .seconds(2))
+            } catch {}
+            guard !Task.isCancelled, self.epoch == generation else { return }
+            self.finish()
         }
     }
     func shutdown() { finish() }
@@ -108,10 +120,18 @@ import OSLog
         startTask?.cancel(); startTask = nil; stopTask?.cancel(); stopTask = nil
         inputTask?.cancel(); inputTask = nil
         diagnosticsTask?.cancel(); diagnosticsTask = nil; inputLevel = 0
-        audio.stop(); socket.disconnect(); conversation.disconnect(); frames.reset()
+        audio.stop(); conversation.disconnect(); inputPump = nil
+        let socket = socket
+        cleanupTask = Task { await socket.disconnect() }
     }
     private func fail(_ error: VoiceFailure) { errorMessage = error.localizedDescription; finish() }
-    private func resetInput() { inputTurn = UUID().uuidString; sequence = 0; frames.reset() }
+    private func resetInput() {
+        inputTurn = UUID().uuidString
+        if let inputPump {
+            let turn = inputTurn
+            Task { await inputPump.renew(turn: turn) }
+        }
+    }
 
     private func receive(_ event: VoiceEvent) {
         guard active else { return }
@@ -123,64 +143,66 @@ import OSLog
                 case .play(let data): if !testMode { try audio.enqueue(data) }
                 case .renewInput: resetInput()
                 case .stopped: finish()
-                case .ready: try beginAudio()
+                case .ready: beginAudio()
                 }
             }
         } catch { fail((error as? VoiceFailure) ?? .invalidEvent) }
     }
-    private func beginAudio() throws {
+    private func beginAudio() {
         let generation = epoch
-        if provider == "fake" {
-            if !testMode { _ = try audio.start(microphone: false) { [weak self] error in self?.fail(error) } }
-            inputTask = Task { [weak self] in
-                guard let self else { return }
-                do {
-                    try await self.sendPCM(Data(repeating: 0, count: 16000))
-                    guard !Task.isCancelled, self.epoch == generation else { return }
-                    try self.socket.send(VoiceEvent(type: "turn.commit", sessionId: self.conversation.sessionId, turnId: self.inputTurn))
-                } catch {
-                    guard !Task.isCancelled, self.epoch == generation else { return }
-                    self.fail((error as? VoiceFailure) ?? .disconnected)
-                }
-            }
-            return
-        }
-        let stream = try audio.start(microphone: true) { [weak self] error in
-            guard self?.epoch == generation else { return }; self?.fail(error)
-        }
-        audioLog.info("Audio engine started; waiting for converted PCM16 buffers")
-        let started = Date()
-        diagnosticsTask = Task { [weak self] in
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(1)) } catch { return }
-                guard let self, self.epoch == generation, !self.stopping else { return }
-                let now = Date()
-                let stalled = now.timeIntervalSince(self.lastCapture ?? started) >= 5
-                if stalled { self.inputLevel = 0 }
-                self.audioWarning = stalled ? "Nenhum áudio convertido recebido há 5 s. Confira o dispositivo de entrada."
-                    : (now.timeIntervalSince(self.lastSignal ?? started) >= 10 ? "Áudio chegando, mas nível muito baixo há 10 s. Confira microfone, volume e modo de voz do sistema." : nil)
-                self.audioLog.info("PCM buffers=\(self.capturedBuffers) bytes=\(self.capturedBytes) sentFrames=\(self.sentFrames) rms=\(self.inputLevel) stalled=\(stalled)")
-            }
-        }
+        guard let session = conversation.sessionId else { fail(.disconnected); return }
+        let pump = VoiceInputPump(session: session, turn: inputTurn)
+        inputPump = pump
         inputTask = Task { [weak self] in
-            for await data in stream {
-                guard let self, !Task.isCancelled, self.epoch == generation, !self.stopping else { return }
-                self.capturedBuffers += 1; self.capturedBytes += data.count
-                self.inputLevel = VoiceDiagnostics.level(data); self.lastCapture = Date()
-                if self.inputLevel > 0.001 { self.lastSignal = Date() }
-                do { try await self.sendPCM(data) } catch {
+            guard let self else { return }
+            do {
+                if self.provider == "fake" {
+                    if !self.testMode {
+                        _ = try await self.audio.start(microphone: false) { [weak self] error in
+                            guard self?.epoch == generation else { return }; self?.fail(error)
+                        }
+                    }
                     guard !Task.isCancelled, self.epoch == generation else { return }
-                    self.fail((error as? VoiceFailure) ?? .audioFormat); return
+                    try await pump.send(Data(repeating: 0, count: 16000), socket: self.socket)
+                    guard !Task.isCancelled, self.epoch == generation else { return }
+                    try await self.socket.send(VoiceEvent(type: "turn.commit", sessionId: session, turnId: self.inputTurn))
+                    return
                 }
+                let stream = try await self.audio.start(microphone: true) { [weak self] error in
+                    guard self?.epoch == generation else { return }; self?.fail(error)
+                }
+                guard !Task.isCancelled, self.epoch == generation else { return }
+                self.audioLog.info("Audio engine started; PCM/network executor=VoiceNetworkActor UI sampling=5Hz")
+                self.beginDiagnostics(pump: pump, generation: generation)
+                try await pump.run(stream, socket: self.socket)
+            } catch {
+                guard !Task.isCancelled, self.epoch == generation else { return }
+                self.fail((error as? VoiceFailure) ?? .audioFormat)
             }
         }
     }
-    private func sendPCM(_ data: Data) async throws {
-        guard let session = conversation.sessionId else { throw VoiceFailure.disconnected }
-        for frame in try frames.append(data) {
-            sequence += 1
-            try await socket.sendAudio(VoiceEvent(type: "audio.append", sessionId: session, turnId: inputTurn,
-                                       sequence: sequence, audio: frame.base64EncodedString(), sampleRate: 16000))
+    private func beginDiagnostics(pump: VoiceInputPump, generation: Int) {
+        let started = Date()
+        diagnosticsTask = Task { [weak self] in
+            var ticks = 0
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+                let stats = await pump.stats
+                guard let self, self.epoch == generation, !self.stopping else { return }
+                let sent = await self.socket.audioFramesSent
+                guard !Task.isCancelled, self.epoch == generation else { return }
+                self.capturedBuffers = stats.buffers; self.capturedBytes = stats.bytes
+                self.sentFrames = sent; self.inputLevel = stats.level
+                let now = Date()
+                let stalled = now.timeIntervalSince(stats.lastCapture ?? started) >= 5
+                if stalled { self.inputLevel = 0 }
+                self.audioWarning = stalled ? "Nenhum áudio convertido recebido há 5 s. Confira o dispositivo de entrada."
+                    : (now.timeIntervalSince(stats.lastSignal ?? started) >= 10 ? "Áudio chegando, mas nível muito baixo há 10 s. Confira microfone, volume e modo de voz do sistema." : nil)
+                ticks += 1
+                if ticks % 5 == 0 {
+                    self.audioLog.info("PCM buffers=\(self.capturedBuffers) bytes=\(self.capturedBytes) sentFrames=\(self.sentFrames) rms=\(self.inputLevel) stalled=\(stalled)")
+                }
+            }
         }
     }
 }

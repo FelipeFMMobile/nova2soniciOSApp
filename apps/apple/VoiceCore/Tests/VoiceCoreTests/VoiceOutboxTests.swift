@@ -2,7 +2,30 @@ import XCTest
 @testable import VoiceCore
 
 final class VoiceOutboxTests: XCTestCase {
-    @MainActor func testShortStallResumesWithoutLosingOrReorderingAudio() async throws {
+    @VoiceNetworkActor func testNetworkExecutorDoesNotRunOnMainThread() async {
+        XCTAssertFalse(Thread.isMainThread)
+    }
+
+    @VoiceNetworkActor func testRepeatedSlowSendsKeepBoundedOrderedQueue() async throws {
+        let queue = VoiceOutbox(capacity: 2)
+        let producer = Task {
+            for sequence in 1...20 {
+                try await queue.enqueueAudio(VoiceEvent(type: "audio.append", sequence: UInt64(sequence)))
+            }
+        }
+        defer { producer.cancel(); queue.close() }
+        var reader = queue.stream.makeAsyncIterator()
+        for sequence in 1...20 {
+            let event = await reader.next()
+            XCTAssertEqual(event?.sequence, UInt64(sequence))
+            try await Task.sleep(for: .milliseconds(20))
+            XCTAssertLessThanOrEqual(queue.occupancy, 2)
+            queue.sent()
+        }
+        try await producer.value
+        XCTAssertEqual(queue.occupancy, 0)
+    }
+    @VoiceNetworkActor func testShortStallResumesWithoutLosingOrReorderingAudio() async throws {
         let queue = VoiceOutbox(capacity: 1)
         try await queue.enqueueAudio(VoiceEvent(type: "audio.append", sequence: 1))
         var resumed = false
@@ -24,7 +47,7 @@ final class VoiceOutboxTests: XCTestCase {
         XCTAssertEqual(second?.sequence, 2)
     }
 
-    @MainActor func testPersistentStallHasSpecificTimeout() async throws {
+    @VoiceNetworkActor func testPersistentStallHasSpecificTimeout() async throws {
         let queue = VoiceOutbox(capacity: 1)
         defer { queue.close() }
         try await queue.enqueueAudio(VoiceEvent(type: "audio.append", sequence: 1))
@@ -34,7 +57,7 @@ final class VoiceOutboxTests: XCTestCase {
         } catch { XCTAssertEqual(error as? VoiceFailure, .sendBackpressure) }
     }
 
-    @MainActor func testControlSlotsRemainAvailableWhenAudioIsFull() async throws {
+    @VoiceNetworkActor func testControlSlotsRemainAvailableWhenAudioIsFull() async throws {
         let queue = VoiceOutbox(capacity: 1)
         defer { queue.close() }
         try await queue.enqueueAudio(VoiceEvent(type: "audio.append", sequence: 1))
@@ -48,7 +71,7 @@ final class VoiceOutboxTests: XCTestCase {
         XCTAssertEqual([first?.type, second?.type, third?.type], ["audio.append", "session.stop", "turn.commit"])
     }
 
-    @MainActor func testWaitingProducerCanBeCancelled() async throws {
+    @VoiceNetworkActor func testWaitingProducerCanBeCancelled() async throws {
         let queue = VoiceOutbox(capacity: 1)
         defer { queue.close() }
         try await queue.enqueueAudio(VoiceEvent(type: "audio.append", sequence: 1))
@@ -59,7 +82,7 @@ final class VoiceOutboxTests: XCTestCase {
         catch { XCTAssertTrue(error is CancellationError) }
     }
 
-    @MainActor func testCloseReleasesWaitingProducerAndRejectsStaleFrames() async throws {
+    @VoiceNetworkActor func testCloseReleasesWaitingProducerAndRejectsStaleFrames() async throws {
         let queue = VoiceOutbox(capacity: 1)
         try await queue.enqueueAudio(VoiceEvent(type: "audio.append", sequence: 1))
         let producer = Task { try await queue.enqueueAudio(VoiceEvent(type: "audio.append", sequence: 2)) }

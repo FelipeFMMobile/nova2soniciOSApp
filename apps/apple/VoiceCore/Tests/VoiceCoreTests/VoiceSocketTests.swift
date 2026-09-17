@@ -2,7 +2,7 @@ import XCTest
 @testable import VoiceCore
 
 final class VoiceSocketTests: XCTestCase {
-    @MainActor func testDisconnectedSendAndInvalidConfiguration() throws {
+    @VoiceNetworkActor func testDisconnectedSendAndInvalidConfiguration() async throws {
         let client = VoiceSocket()
         XCTAssertThrowsError(try client.send(VoiceEvent(type: "session.stop")))
         XCTAssertThrowsError(try client.connect(url: "ws://localhost/v1/voice", token: "bad\r\nheader", provider: "fake", requestId: "test"))
@@ -14,30 +14,43 @@ final class VoiceSocketTests: XCTestCase {
     @MainActor func testFakeGatewayLifecycleAndReconnect() async throws {
         guard let url = ProcessInfo.processInfo.environment["STS_APPLE_E2E_URL"] else { throw XCTSkip("Local fake gateway not requested") }
         let client = VoiceSocket()
-        defer { client.disconnect() }
+        defer { Task { await client.disconnect() } }
         for _ in 0..<2 {
             let stopped = expectation(description: "Session stopped")
             var state = ConversationState()
             var heardAudio = false
             var transcript = false
             var stoppedReceived = false
-            client.onFailure = { error in XCTFail(error.localizedDescription); if !stoppedReceived { stoppedReceived = true; stopped.fulfill() } }
-            client.onEvent = { event in
+            await client.configure(onEvent: { event in
                 do {
                     let effects = try state.handle(event)
                     if effects.contains(.ready) {
-                        try client.send(VoiceEvent(type: "audio.append", sessionId: state.sessionId, turnId: "apple-test", sequence: 1, audio: "AAA=", sampleRate: 16000))
-                        try client.send(VoiceEvent(type: "turn.commit", sessionId: state.sessionId, turnId: "apple-test"))
+                        let session = state.sessionId
+                        Task {
+                            do {
+                                let pump = VoiceInputPump(session: try XCTUnwrap(session), turn: "apple-test")
+                                try await pump.send(Data(repeating: 0, count: 16000), socket: client)
+                                let stats = await pump.stats
+                                XCTAssertEqual(stats.buffers, 1); XCTAssertEqual(stats.bytes, 16000)
+                                try await client.send(VoiceEvent(type: "turn.commit", sessionId: session, turnId: "apple-test"))
+                            } catch { XCTFail(String(describing: error)) }
+                        }
                     }
                     if event.type == "audio.output" { heardAudio = true }
                     if event.type == "transcript" { transcript = true }
-                    if event.type == "turn.completed" { try client.send(VoiceEvent(type: "session.stop", sessionId: state.sessionId)) }
+                    if event.type == "turn.completed" {
+                        let session = state.sessionId
+                        Task {
+                            do { try await client.send(VoiceEvent(type: "session.stop", sessionId: session)) }
+                            catch { XCTFail(String(describing: error)) }
+                        }
+                    }
                     if effects.contains(.stopped), !stoppedReceived { stoppedReceived = true; stopped.fulfill() }
                 } catch { XCTFail(String(describing: error)); if !stoppedReceived { stoppedReceived = true; stopped.fulfill() } }
-            }
-            try client.connect(url: url, token: "apple-test-token", provider: "fake", requestId: UUID().uuidString)
+            }, onFailure: { error in XCTFail(error.localizedDescription); if !stoppedReceived { stoppedReceived = true; stopped.fulfill() } })
+            try await client.connect(url: url, token: "apple-test-token", provider: "fake", requestId: UUID().uuidString)
             await fulfillment(of: [stopped], timeout: 10)
-            client.disconnect()
+            await client.disconnect()
             XCTAssertTrue(heardAudio); XCTAssertTrue(transcript)
         }
     }

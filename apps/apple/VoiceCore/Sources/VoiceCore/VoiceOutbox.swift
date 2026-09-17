@@ -2,13 +2,14 @@ import Foundation
 
 /// One audio producer, one writer. Capacity includes the frame currently in flight.
 /// Two reserved control slots allow session.stop even while audio is congested.
-@MainActor final class VoiceOutbox {
+@VoiceNetworkActor final class VoiceOutbox {
     let stream: AsyncStream<VoiceEvent>
     private let continuation: AsyncStream<VoiceEvent>.Continuation
     private let capacity: Int
     private var pending = 0
     private var closed = false
     var audioFull: Bool { pending >= capacity }
+    var occupancy: Int { pending }
 
     init(capacity: Int = 16) {
         precondition(capacity > 0)

@@ -2,10 +2,9 @@ import Foundation
 import OSLog
 
 /// One ordered writer. Audio waits for capacity; persistent congestion terminates without dropping PCM.
-@MainActor public final class VoiceSocket {
-    public var onEvent: (@MainActor (VoiceEvent) -> Void)?
-    public var onFailure: (@MainActor (VoiceFailure) -> Void)?
-    public var onSent: (@MainActor (VoiceEvent) -> Void)?
+@VoiceNetworkActor public final class VoiceSocket {
+    private var onEvent: (@MainActor @Sendable (VoiceEvent) -> Void)?
+    private var onFailure: (@MainActor @Sendable (VoiceFailure) -> Void)?
     private let log = Logger(subsystem: "com.sts.NovaVoice", category: "Gateway")
     private var sentAudio = 0
     private var receivedAudio = 0
@@ -17,8 +16,14 @@ import OSLog
     private var deadline: Task<Void, Never>?
     private var generation = 0
 
-    public init() {}
+    public nonisolated init() {}
+    public func configure(onEvent: @escaping @MainActor @Sendable (VoiceEvent) -> Void,
+                          onFailure: @escaping @MainActor @Sendable (VoiceFailure) -> Void) {
+        self.onEvent = onEvent; self.onFailure = onFailure
+    }
+    public var audioFramesSent: Int { sentAudio }
     public func connect(url: String, token: String, provider: String, requestId: String) throws {
+        try Task.checkCancellation()
         let endpoint = try GatewayConfiguration.validate(url)
         guard ["nova", "fake"].contains(provider), !token.utf8.contains(10), !token.utf8.contains(13), token.utf8.count <= 4096 else { throw VoiceFailure.invalidConfiguration }
         disconnect()
@@ -43,10 +48,14 @@ import OSLog
                     guard self?.generation == epoch else { return }
                     let data = try event.encoded()
                     guard let text = String(data: data, encoding: .utf8) else { throw VoiceFailure.invalidEvent }
+                    let started = ContinuousClock.now
                     try await socket.send(.string(text))
+                    let duration = started.duration(to: .now)
                     outbox.sent()
                     guard let self, self.generation == epoch else { return }
-                    self.onSent?(event)
+                    if duration > .milliseconds(100) {
+                        self.log.info("SEND slow duration=\(String(describing: duration), privacy: .public) queue=\(outbox.occupancy)")
+                    }
                     if event.type == "audio.append" { self.sentAudio += 1 }
                     if event.type != "audio.append" || self.sentAudio == 1 || self.sentAudio % 50 == 0 {
                         self.log.info("SEND \(VoiceDiagnostics.summary(event), privacy: .public)")
@@ -69,7 +78,7 @@ import OSLog
                         self.log.info("RECV \(VoiceDiagnostics.summary(event), privacy: .public)")
                     }
                     if event.type == "session.ready" { self.deadline?.cancel(); self.deadline = nil }
-                    self.onEvent?(event)
+                    await self.onEvent?(event)
                 }
             } catch {
                 self?.logTransportError(error, operation: "receive", epoch: epoch)
@@ -123,7 +132,9 @@ import OSLog
     private func fail(_ error: VoiceFailure, epoch: Int) {
         guard generation == epoch else { return }
         log.error("Voice WebSocket failed: \(String(describing: error), privacy: .public)")
-        disconnect(); onFailure?(error)
+        let callback = onFailure
+        disconnect()
+        Task { @MainActor in callback?(error) }
     }
     private func logTransportError(_ error: Error, operation: String, epoch: Int) {
         guard generation == epoch else { return }
