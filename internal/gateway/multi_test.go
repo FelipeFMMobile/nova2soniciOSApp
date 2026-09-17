@@ -67,7 +67,7 @@ func finishMock(c *websocket.Conn, id string) {
 // Mock scripts choose calls explicitly. This proves host routing/data flow,
 // never Nova's ability to choose tools or interpret natural language.
 func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
-	scenarios := []string{"notes_only", "agenda_only", "note_to_agenda", "agenda_to_note", "ambiguous", "ordinary", "cancel_approved", "cancel_refused", "invalid_arguments", "retry"}
+	scenarios := []string{"notes_only", "agenda_only", "note_to_agenda", "agenda_to_note", "ambiguous", "ordinary", "cancel_approved", "cancel_refused", "invalid_arguments", "retry", "spoken_create"}
 	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			notesPath, agendaPath, servers := multiConfig(t)
@@ -98,6 +98,8 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				}
 				phrase := "Agende Consulta fictícia em 2030-05-20 às 09:00 por uma hora"
 				switch scenario {
+				case "spoken_create":
+					phrase = "Agende reunião dia 18 de setembro de 2026 às 10 horas por uma hora"
 				case "ordinary":
 					phrase = "Olá tudo bem"
 				case "note_to_agenda":
@@ -115,6 +117,11 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 					return bridgeResult(t, c)
 				}
 				switch scenario {
+				case "spoken_create":
+					r := call("spoken", "local_agenda_create_event", `{"title":"reunião","start":"2026-09-18T10:00:00-03:00","end":"2026-09-18T11:00:00-03:00"}`)
+					if r.IsError || mcp.Status(r) != "created" {
+						t.Error(r)
+					}
 				case "notes_only":
 					if r := call("n1", "memo_notes_list", `{"query":"Consulta"}`); r.IsError || !strings.Contains(r.Content[0].Text, "Consulta fictícia") {
 						t.Error(r)
@@ -219,12 +226,16 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer a.Close()
-			events, err := a.Events(context.Background(), "2030-05-20T00:00:00Z", "2030-05-21T00:00:00Z")
+			start, end := "2030-05-20T00:00:00Z", "2030-05-21T00:00:00Z"
+			if scenario == "spoken_create" {
+				start, end = "2026-09-18T00:00:00Z", "2026-09-19T00:00:00Z"
+			}
+			events, err := a.Events(context.Background(), start, end)
 			if err != nil {
 				t.Fatal(err)
 			}
 			want := 0
-			if scenario == "note_to_agenda" || scenario == "retry" || strings.HasPrefix(scenario, "cancel_") {
+			if scenario == "note_to_agenda" || scenario == "retry" || scenario == "spoken_create" || strings.HasPrefix(scenario, "cancel_") {
 				want = 1
 			}
 			if len(events) != want {

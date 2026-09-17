@@ -128,7 +128,7 @@ func (s *Session) Plan(id, name, turn string, args json.RawMessage) (Job, *mcp.R
 		if b, ok := s.tools[name]; ok {
 			resolved = b.tool.Name
 			if b.original == "agenda.create_event" && code == "clarification_required" {
-				r = mcp.TextResult(map[string]any{"status": "error", "code": code, "reason": "intent_not_authorized", "date_format_valid": true, "instruction": "A formatação RFC3339 dos argumentos passou; o bloqueio é de autorização/intenção, não de data. Nesta POC a transcrição final USER deve conter pedido explícito, data completa numérica e horário numérico no mesmo turno. Datas por extenso/relativas ou sim isolado não satisfazem esse filtro. Explique a limitação; não fique reformatando datas corretas, não anuncie sucesso e não invente um novo fluxo de confirmação."}, true)
+				r = mcp.TextResult(map[string]any{"status": "error", "code": code, "reason": "intent_not_authorized", "date_format_valid": true, "instruction": "A formatação RFC3339 dos argumentos passou; falta um pedido explícito de agendamento na transcrição final USER do turno atual, sem negação, incerteza ou citação. Datas podem ser faladas por extenso: não peça formato numérico ao usuário. Sim isolado não é pedido de criação. Não anuncie sucesso e não invente confirmação adicional."}, true)
 			}
 		}
 		return Job{ID: id, Name: resolved, TurnID: turn, Args: append(json.RawMessage(nil), args...)}, &r
@@ -319,14 +319,12 @@ func (s *Session) Interrupt() { s.Pending = nil; s.intentText = "" }
 // Conservative PT-BR terminal POC grammar. Intent comes only from finalized
 // USER ASR, never annotations, arguments, model output or quoted text.
 var agendaIntent = regexp.MustCompile(`^(por favor )?((consulte|busque|leia) .+ e )?(agende|agenda|marque|crie um agendamento|crie um evento|quero agendar|quero marcar) .+`)
-var agendaDate = regexp.MustCompile(`\b\d{4} \d{2} \d{2}\b|\b\d{2} \d{2} \d{4}\b`)
-var agendaClock = regexp.MustCompile(`\b\d{1,2} \d{2}\b|\b\d{1,2}h(\d{2})?\b`)
 
 func explicitAgendaIntent(text string) bool {
-	if !agendaIntent.MatchString(text) || !agendaDate.MatchString(text) || !agendaClock.MatchString(text) {
+	if !agendaIntent.MatchString(text) {
 		return false
 	}
-	for _, word := range []string{"nao", "talvez", "se", "disse", "amanha", "depois", "algum"} {
+	for _, word := range []string{"nao", "talvez", "se", "disse", "algum"} {
 		for _, w := range strings.Fields(text) {
 			if w == word {
 				return false

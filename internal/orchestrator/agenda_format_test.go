@@ -10,7 +10,7 @@ import (
 
 func TestAgendaMalformedFormatIsDistinctFromIntentRejection(t *testing.T) {
 	s, backend := multiSetup(t)
-	s.ObserveUser("u", "Agende reunião dia 18 de setembro de 2026 às dez por uma hora")
+	s.ObserveUser("u", "Talvez agende reunião dia 18 de setembro de 2026 às dez por uma hora")
 	bad := json.RawMessage(`{"title":"reunião","start":"18 de setembro de 2026 às 10 horas","end":"2026-09-18 11:00"}`)
 	_, result := s.Plan("bad", "local_agenda_create_event", "u", bad)
 	if result == nil || !result.IsError || !strings.Contains(result.Content[0].Text, "invalid_datetime_format") || !strings.Contains(result.Content[0].Text, "expected_format") {
@@ -21,10 +21,10 @@ func TestAgendaMalformedFormatIsDistinctFromIntentRejection(t *testing.T) {
 	if result == nil || !result.IsError || !strings.Contains(result.Content[0].Text, "intent_not_authorized") || !strings.Contains(result.Content[0].Text, `"date_format_valid":true`) || s.Pending != nil || backend.calls != 0 {
 		t.Fatal("must not change authorization or create proposal", result)
 	}
-	s.ObserveUser("u2", "Agende reunião em 2026-09-18 às 10:00 por uma hora")
+	s.ObserveUser("u2", "Agende reunião dia 18 de setembro de 2026 às 10 horas por uma hora")
 	_, result = s.Plan("allowed", "local_agenda_create_event", "u2", valid)
 	if result != nil {
-		t.Fatal("numeric intent still allowed", result)
+		t.Fatal("spoken date intent must be allowed", result)
 	}
 }
 

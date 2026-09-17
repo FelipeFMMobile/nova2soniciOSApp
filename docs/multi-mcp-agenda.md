@@ -87,17 +87,17 @@ adjacentes podem coexistir. Cancelamento exige evento ativo existente.
 
 O filtro de intenção é conservador e específico desta POC PT-BR: o ASR final
 de USER deve começar com `agende`, `marque`, `crie um evento/agendamento`,
-`quero agendar/marcar` (opcional `por favor`, ou prefixo `consulte/busque/leia … e`), conter data completa numérica
-`AAAA-MM-DD` ou `DD/MM/AAAA` e horário numérico `09:00`/`9h`. Negação,
-condicional, incerteza, citações e termos relativos como amanhã/depois bloqueiam
+`quero agendar/marcar` (opcional `por favor`, ou prefixo `consulte/busque/leia … e`).
+Não é mais exigido que data/horário sejam numéricos na transcrição. Negação,
+condicional, incerteza e citações bloqueiam
 criação com `clarification_required`. O modelo deve esclarecer informações
 ambíguas; o Go não transforma linguagem livre em uma data presumida. Isso
-**não é um parser geral de intenção**: datas por extenso, pedidos compostos
+**não é um parser geral de intenção**: pedidos compostos
 fora dessa gramática e variantes do ASR podem exigir reformulação. O teste Nova
 real precisa avaliar essa limitação antes do aceite. O schema exige título e
 intervalo; validação semântica final de horários/disponibilidade fica no Go.
 
-### Diagnóstico de formatação sem alterar autorização
+### Diagnóstico de formatação e intenção
 
 O prompt da bridge inclui exemplo fala → argumentos RFC3339 antes da chamada
 nativa; nenhuma confirmação de criação adicional foi introduzida. O host
@@ -108,16 +108,20 @@ não são valores padrão; o host nunca interpreta texto livre ou presume datas.
 
 Se o formato passar, mas a criação não satisfizer o filtro conservador acima,
 `clarification_required` inclui `reason=intent_not_authorized` e
-`date_format_valid=true`. Isso não é falha de conversão da data. A regra
-numérica continua ativa: este ajuste pode melhorar os argumentos da Nova, mas
-não torna datas faladas autorizadas pelo Go. Eventual mudança dessa regra é uma
-decisão separada, não parte deste ajuste.
+`date_format_valid=true`. Isso não é falha de conversão da data. Um pedido
+explícito no turno atual com argumentos válidos pode gravar imediatamente,
+mesmo com data por extenso, sem nova confirmação. O Go confia nos instantes
+interpretados pela Nova; não compara a data dos argumentos com a fala. Formato
+válido não garante interpretação correta: confira o evento criado. Cancelamento
+continua exigindo confirmação posterior e disponibilidade/idempotência seguem
+ativas.
 
 Reinicie `make dev`, abra nova conversa e no app expanda **Ferramentas MCP →
 Argumentos reais enviados pela Nova**, depois **Detalhes do resultado**. Os
 argumentos são preservados após a resposta. Para “reunião dia 18 de setembro
 de 2026 às 10 horas por uma hora”, espere `start=2026-09-18T10:00:00-03:00`
-e `end=2026-09-18T11:00:00-03:00`; ainda pode ocorrer bloqueio de intenção.
+e `end=2026-09-18T11:00:00-03:00`; com pedido explícito e horário disponível,
+espere `created`.
 Compartilhe ambos os trechos para distinguir os problemas. Dados de ferramenta
 ficam na tela e na evidência privada já existente, não são acrescentados aos
 logs públicos do Xcode. Testes com mocks não provam que a Nova real escolherá
@@ -205,8 +209,8 @@ GOCACHE=/private/tmp/sts-go-cache go run ./cmd/voice-client -provider nova \
 ```
 
 Fala sugerida: “Agende Consulta Aurora em vinte de maio de dois mil e trinta,
-às nove horas, por uma hora.” **Verifique o ASR**: se o modelo/ASR produzir data
-por extenso, o filtro conservador pode exigir reformulação numérica. Não trate
+às nove horas, por uma hora.” **Verifique os argumentos e o resultado**: datas
+por extenso na transcrição são aceitas; argumentos devem ser RFC3339. Não trate
 rejeição como sucesso nem force tool choice para esconder falha de seleção.
 
 1. Só Notes: criar/consultar valor fictício único em conversa nova; somente
