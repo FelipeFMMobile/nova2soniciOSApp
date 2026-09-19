@@ -32,7 +32,7 @@ type toolRuntime struct {
 }
 
 func (s *Server) openTools(ctx context.Context, namespace, sessionID string) (*toolRuntime, error) {
-	if s.cfg.MCPCommand == "" && len(s.cfg.MCPServers) == 0 && s.toolFactory == nil {
+	if s.cfg.MCPBackend != "litellm" && s.cfg.MCPCommand == "" && len(s.cfg.MCPServers) == 0 && s.toolFactory == nil {
 		return nil, nil
 	}
 	toolCtx, cancel := context.WithCancel(ctx)
@@ -42,6 +42,14 @@ func (s *Server) openTools(ctx context.Context, namespace, sessionID string) (*t
 	allowed := s.cfg.MCPAllowedTools
 	if s.toolFactory != nil {
 		backend, closeBackend, err = s.toolFactory(toolCtx)
+	} else if s.cfg.MCPBackend == "litellm" {
+		var gateway *mcp.Gateway
+		gateway, err = mcp.NewGateway(toolCtx, s.cfg.LiteLLMURL, s.cfg.LiteLLMAPIKey, s.cfg.MCPContextSecret, s.cfg.LiteLLMServers, s.cfg.MCPTimeout)
+		if err == nil {
+			backend = gateway
+			closeBackend = func() {}
+			allowed = gateway.AllowedTools()
+		}
 	} else if len(s.cfg.MCPServers) > 0 {
 		var router *mcp.Router
 		router, err = mcp.StartServers(toolCtx, s.cfg.MCPServers, s.cfg.MCPTimeout)

@@ -108,3 +108,19 @@ func TestExplicitMultipleServers(t *testing.T) {
 		t.Fatal("missing host policy")
 	}
 }
+
+func TestLiteLLMGatewayConfiguration(t *testing.T) {
+	t.Setenv("STS_MCP_BACKEND", "litellm")
+	t.Setenv("STS_LITELLM_MCP_URL", "http://127.0.0.1:4000")
+	t.Setenv("STS_LITELLM_API_KEY", "service-key")
+	t.Setenv("STS_MCP_CONTEXT_SECRET", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+	t.Setenv("STS_LITELLM_MCP_SERVERS", `[{"alias":"memo","server_id":"notes","allowed_tools":["notes.list"],"policies":{"notes.list":"read_only"}}]`)
+	cfg, err := Load()
+	if err != nil || len(cfg.LiteLLMServers) != 1 {
+		t.Fatal(cfg, err)
+	}
+	t.Setenv("STS_MCP_COMMAND", "/bin/mcp")
+	if _, err = Load(); err == nil {
+		t.Fatal("mixed backends accepted")
+	}
+}

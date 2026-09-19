@@ -24,7 +24,7 @@ type rpcError struct {
 
 // Serve never writes logs to stdout. Host-only metadata carries retry identity
 // and approval: neither is accepted as a model tool argument.
-func Serve(ctx context.Context, in io.Reader, out io.Writer, store *storage.Store) error {
+func Serve(ctx context.Context, in io.Reader, out io.Writer, store *storage.Store, envelope ...*EnvelopeCodec) error {
 	return ServeTools(ctx, in, out, "sts-notes", NotesTools(), func(ctx context.Context, name string, args json.RawMessage, key string, confirmed bool) Result {
 		if name == "notes.list" {
 			var input struct {
@@ -45,10 +45,18 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, store *storage.Stor
 			return Failure("mutation_failed")
 		}
 		return TextResult(data, false)
-	})
+	}, envelope...)
 }
 
-func ServeTools(ctx context.Context, in io.Reader, out io.Writer, name string, tools []Tool, call func(context.Context, string, json.RawMessage, string, bool) Result) error {
+func ServeTools(ctx context.Context, in io.Reader, out io.Writer, name string, tools []Tool, call func(context.Context, string, json.RawMessage, string, bool) Result, envelope ...*EnvelopeCodec) error {
+	var codec *EnvelopeCodec
+	if len(envelope) > 0 {
+		codec = envelope[0]
+	}
+	advertised := tools
+	if codec != nil {
+		advertised = EnvelopeTools(tools)
+	}
 	scanner := bufio.NewScanner(in)
 	scanner.Buffer(make([]byte, 4096), MaxMessage)
 	enc := json.NewEncoder(out)
@@ -88,7 +96,7 @@ func ServeTools(ctx context.Context, in io.Reader, out io.Writer, name string, t
 		case !ready:
 			resp.Error = &rpcError{-32000, "initialization required"}
 		case req.Method == "tools/list":
-			result = map[string]any{"tools": tools}
+			result = map[string]any{"tools": advertised}
 		case req.Method == "tools/call":
 			var p struct {
 				Name      string          `json:"name"`
@@ -112,6 +120,15 @@ func ServeTools(ctx context.Context, in io.Reader, out io.Writer, name string, t
 			if selected == nil {
 				resp.Error = &rpcError{-32602, "unknown tool"}
 				break
+			}
+			if codec != nil {
+				// Signed envelope mode cannot fall back to caller-supplied _meta.
+				payload, key, confirmed, err := codec.Unwrap(p.Name, p.Arguments)
+				if err != nil {
+					result = Failure("invalid_host_context")
+					break
+				}
+				p.Arguments, p.Meta.Key, p.Meta.Confirmed = payload, key, confirmed
 			}
 			schema, err := Compile(selected.InputSchema)
 			if err != nil || Validate(schema, p.Arguments) != nil {

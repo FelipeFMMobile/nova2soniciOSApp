@@ -5,6 +5,10 @@ Apple client streams microphone audio to a local Go gateway. The gateway owns
 session state, interruption, permissions, and MCP tool execution, while Amazon
 Nova 2 Sonic provides managed bidirectional inference through AWS Bedrock.
 
+MCP access can run directly over stdio or through the local LiteLLM gateway.
+The governed local setup, admin panel and service-key workflow are documented in
+[docs/litellm-mcp-gateway.md](docs/litellm-mcp-gateway.md).
+
 ## Prerequisites
 
 - macOS 26 with Xcode 27

@@ -43,19 +43,8 @@ func ValidateServers(servers []ServerConfig) error {
 			if n == "" || seen[n] || (p != ReadOnly && p != ExplicitIntent && p != ConfirmLater) {
 				return errors.New("each allowed tool requires an explicit host policy")
 			}
-			switch n {
-			case "notes.delete", "agenda.cancel_event":
-				if p != ConfirmLater {
-					return errors.New("destructive built-in tool requires confirm_later")
-				}
-			case "notes.create", "agenda.create_event":
-				if p != ExplicitIntent {
-					return errors.New("creation built-in tool requires explicit_intent")
-				}
-			case "notes.list", "agenda.list_slots", "agenda.list_events":
-				if p != ReadOnly {
-					return errors.New("query built-in tool requires read_only")
-				}
+			if err := validateBuiltInPolicy(n, p); err != nil {
+				return err
 			}
 			seen[n] = true
 		}
@@ -63,6 +52,24 @@ func ValidateServers(servers []ServerConfig) error {
 			if !seen[n] {
 				return errors.New("policy outside allowlist")
 			}
+		}
+	}
+	return nil
+}
+
+func validateBuiltInPolicy(name string, policy Policy) error {
+	switch name {
+	case "notes.delete", "agenda.cancel_event":
+		if policy != ConfirmLater {
+			return errors.New("destructive built-in tool requires confirm_later")
+		}
+	case "notes.create", "agenda.create_event":
+		if policy != ExplicitIntent {
+			return errors.New("creation built-in tool requires explicit_intent")
+		}
+	case "notes.list", "agenda.list_slots", "agenda.list_events":
+		if policy != ReadOnly {
+			return errors.New("query built-in tool requires read_only")
 		}
 	}
 	return nil

@@ -1,0 +1,35 @@
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  # MCP call details can contain arguments/results. For this local POC the Go
+  # audit is the payload-free source of operation history.
+  disable_spend_logs: true
+
+mcp_servers:
+  notes:
+    server_id: sts-notes
+    alias: memo
+    transport: stdio
+    command: /app/bin/mcp-notes
+    args: ["-db", "/data/notes.sqlite", "-context-mode", "envelope"]
+    env:
+      STS_MCP_CONTEXT_SECRET: os.environ/STS_MCP_CONTEXT_SECRET
+    allowed_tools: [notes.create, notes.list, notes.delete]
+    allow_all_keys: false
+    # Requests arrive from the Docker host bridge. Network exposure is still
+    # constrained by the loopback-only published port in compose.yaml.
+    available_on_public_internet: true
+    spec_version: "2025-11-25"
+  agenda:
+    server_id: sts-agenda
+    alias: local
+    transport: stdio
+    command: /app/bin/mcp-agenda
+    args: ["-db", "/data/agenda.sqlite", "-context-mode", "envelope"]
+    env:
+      STS_MCP_CONTEXT_SECRET: os.environ/STS_MCP_CONTEXT_SECRET
+    allowed_tools: [agenda.list_slots, agenda.list_events, agenda.create_event, agenda.cancel_event]
+    allow_all_keys: false
+    available_on_public_internet: true
+    spec_version: "2025-11-25"

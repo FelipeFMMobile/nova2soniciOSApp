@@ -12,7 +12,13 @@ import (
 func main() {
 	path := flag.String("db", "./data/agenda.sqlite", "SQLite fictitious agenda path")
 	fixtures := flag.Bool("fixtures", false, "seed deterministic fictitious appointments")
+	mode := flag.String("context-mode", "meta", "host context transport: meta or envelope")
 	flag.Parse()
+	codec, err := mcp.ServerEnvelope(*mode, "local")
+	if err != nil {
+		slog.Error("invalid MCP context configuration")
+		os.Exit(1)
+	}
 	s, err := storage.OpenAgenda(*path)
 	if err != nil {
 		slog.Error("cannot open agenda database")
@@ -25,7 +31,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if err = mcp.ServeAgenda(context.Background(), os.Stdin, os.Stdout, s); err != nil {
+	if err = mcp.ServeAgenda(context.Background(), os.Stdin, os.Stdout, s, codec); err != nil {
 		slog.Error("MCP transport closed")
 		os.Exit(1)
 	}

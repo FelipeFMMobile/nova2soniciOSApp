@@ -22,12 +22,47 @@ func TestHelperProcess(t *testing.T) {
 	if err != nil {
 		os.Exit(2)
 	}
-	err = Serve(context.Background(), os.Stdin, os.Stdout, s)
+	var codec *EnvelopeCodec
+	if os.Getenv("STS_MCP_TEST_ENVELOPE") == "1" {
+		codec, err = NewEnvelopeCodec(os.Getenv("STS_MCP_CONTEXT_SECRET"), "memo")
+	}
+	if err == nil {
+		err = Serve(context.Background(), os.Stdin, os.Stdout, s, codec)
+	}
 	s.Close()
 	if err != nil {
 		os.Exit(3)
 	}
 	os.Exit(0)
+}
+
+func TestEnvelopeModeOverRealStdio(t *testing.T) {
+	t.Setenv("STS_MCP_TEST_HELPER", "1")
+	t.Setenv("STS_MCP_TEST_ENVELOPE", "1")
+	t.Setenv("STS_MCP_CONTEXT_SECRET", testSecret)
+	t.Setenv("STS_MCP_TEST_DB", filepath.Join(t.TempDir(), "envelope.sqlite"))
+	c, err := Start(context.Background(), os.Args[0], []string{"-test.run=^TestHelperProcess$"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tools, err := c.Tools(ctx)
+	if err != nil || len(tools) != 3 {
+		t.Fatal(tools, err)
+	}
+	codec, _ := NewEnvelopeCodec(testSecret, "memo")
+	payload := json.RawMessage(`{"title":"Envelope","content":"durable"}`)
+	envelope, _ := codec.Wrap("notes.create", payload, "stable-envelope", false)
+	var result Result
+	if err = c.request(ctx, "tools/call", map[string]any{"name": "notes.create", "arguments": envelope}, &result); err != nil || result.IsError {
+		t.Fatal(result, err)
+	}
+	// Legacy _meta and plain payload cannot bypass signed-envelope mode.
+	if err = c.request(ctx, "tools/call", map[string]any{"name": "notes.create", "arguments": payload, "_meta": map[string]any{"sts/idempotencyKey": "forged", "sts/confirmed": true}}, &result); err != nil || !result.IsError || Status(result) != "error" {
+		t.Fatal("unsigned call accepted", result, err)
+	}
 }
 
 func TestStdioDiscoveryCallsAndApproval(t *testing.T) {

@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16.4-bookworm
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_POSTGRES_PASSWORD:?set LITELLM_POSTGRES_PASSWORD}
+    volumes:
+      - litellm-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  litellm:
+    build:
+      context: ../..
+      dockerfile: deploy/litellm/Dockerfile
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://litellm:${LITELLM_POSTGRES_PASSWORD}@postgres:5432/litellm
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
+      STS_MCP_CONTEXT_SECRET: ${STS_MCP_CONTEXT_SECRET:?set STS_MCP_CONTEXT_SECRET}
+      LITELLM_LOG: ${LITELLM_LOG:-INFO}
+      LITELLM_MCP_STDIO_EXTRA_COMMANDS: mcp-notes,mcp-agenda
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - litellm-mcp-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+    restart: unless-stopped
+
+volumes:
+  litellm-postgres:
+  litellm-mcp-data:

@@ -10,6 +10,13 @@ APPLE_SIMULATOR_ID ?= 599499E4-DD38-4C6C-9459-D4FDA8B2AE43
 .PHONY: build test race vet gateway mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke nova-demo nova-barge-demo
 .PHONY: apple-core-test apple-build-macos apple-build-ios apple-ui-test
 .PHONY: dev dev-plan dev-test
+.PHONY: litellm-up litellm-down
+
+litellm-up:
+	docker compose --env-file deploy/litellm/.env -f deploy/litellm/compose.yaml up --build -d
+
+litellm-down:
+	docker compose --env-file deploy/litellm/.env -f deploy/litellm/compose.yaml down
 
 dev:
 	python3 scripts/dev.py

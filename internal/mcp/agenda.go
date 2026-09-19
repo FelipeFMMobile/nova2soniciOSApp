@@ -16,7 +16,7 @@ func AgendaTools() []Tool {
 		{Name: "agenda.cancel_event", Description: "Cancela somente o ID retornado pela consulta e após confirmação posterior. Peça exatamente confirmo cancelar agendamento. Só anuncie cancelamento após status cancelled.", InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":128}},"required":["id"],"additionalProperties":false}`)},
 	}
 }
-func ServeAgenda(ctx context.Context, in io.Reader, out io.Writer, s *storage.Agenda) error {
+func ServeAgenda(ctx context.Context, in io.Reader, out io.Writer, s *storage.Agenda, envelope ...*EnvelopeCodec) error {
 	return ServeTools(ctx, in, out, "sts-agenda", AgendaTools(), func(ctx context.Context, name string, args json.RawMessage, key string, confirmed bool) Result {
 		var i storage.AgendaInput
 		_ = json.Unmarshal(args, &i)
@@ -46,5 +46,5 @@ func ServeAgenda(ctx context.Context, in io.Reader, out io.Writer, s *storage.Ag
 			}
 			return TextResult(data, false)
 		}
-	})
+	}, envelope...)
 }

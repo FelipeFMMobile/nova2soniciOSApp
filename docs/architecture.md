@@ -8,7 +8,9 @@ Terminal client (Apple apps are later stages)
     v
 Go gateway on the Mac
     |-- session state, permissions, and MCP orchestration
-    |-- MCP client --> local notes MCP server --> SQLite
+    |-- MCP backend (selectable)
+    |     |-- direct stdio --> local MCP servers --> SQLite
+    |     `-- LiteLLM REST --> local LiteLLM --> stdio MCP servers --> SQLite
     `-- local WebSocket --> Python transport bridge
                               `-- SigV4 HTTP/2 --> Bedrock --> Nova 2 Sonic
 ```
@@ -17,6 +19,13 @@ The Apple app never receives AWS credentials and never connects to Bedrock
 directly. The gateway is the only security and orchestration boundary exposed
 to the client. A minimal Python process owns only the AWS bidirectional stream
 because that API is not currently available in the AWS SDK for Go.
+
+The optional LiteLLM backend runs on the same Mac in Docker, bound to loopback.
+It governs MCP admission, service keys, tool grants and call limits; Nova audio
+and model traffic keep their existing path. Host-only confirmation and replay
+identity travel in a short-lived signed arguments envelope because LiteLLM
+1.101.0 does not preserve custom MCP `_meta` upstream. See
+[LiteLLM MCP gateway](litellm-mcp-gateway.md).
 
 ## Component responsibilities
 

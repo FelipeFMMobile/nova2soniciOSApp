@@ -1,92 +1,116 @@
-# LiteLLM MCP gateway — compatibility gate
+# LiteLLM como gateway MCP local
 
-Work branch: `codex/litellm-mcp-gateway`. The agreed first milestone blocks
-migration unless host confirmation and durable idempotency survive the gateway.
+Branch: `codex/litellm-mcp-gateway`. LiteLLM 1.101.0 e PostgreSQL rodam
+localmente em Docker, expostos somente em `127.0.0.1:4000`. O painel fica em
+<http://127.0.0.1:4000/ui> e usa a chave administrativa.
 
-## Result: migration blocked
-
-The official PyPI stable wheel **LiteLLM 1.101.0** was inspected and its outbound
-SDK call operation executed in isolation with a capturing session on 2026-09-18.
-The operation forwards `name`, `arguments`, and `progress_callback`, but no
-`meta`, even when the request carries the STS fields.
-
-Wheel SHA-256:
-`7cc623a224c6f11a04367a682b095a1e08e5f6da75c990a650910db5f9777819`.
-
-Reproduce using the official wheel, without installing dependencies or AWS calls:
-
-```sh
-python3 scripts/check_litellm_metadata.py /absolute/path/litellm-1.101.0-py3-none-any.whl
+```text
+Cliente de voz -> gateway Go -> ponte Python -> Nova Sonic / Bedrock
+                       |
+                       `-> LiteLLM MCP REST -> Notes (stdio) -> SQLite
+                                            `-> Agenda (stdio) -> SQLite
 ```
 
-Exit 1 means STS metadata was not preserved; exit 0 means this isolated client
-check passed; exit 2 means inspection failed or the source shape changed.
-Passing this check alone does not approve migration: full proxy acceptance is
-still required. The check executes actual wheel code for the SDK call operation,
-with a mock SDK session; it does not claim a running proxy or network test.
+O LiteLLM centraliza autenticação, permissões por servidor/ferramenta e limites.
+O Go continua dono de schema, intenção, confirmação posterior, identidade de
+operação e auditoria. Notes e Agenda continuam donos das regras transacionais e
+do replay durável. Chamadas Nova não passam pelo LiteLLM nesta etapa.
 
-## Cause and impact
+## Compatibilidade de contexto
 
-In `litellm/proxy/_experimental/mcp_server/server.py`,
-`mcp_server_tool_call` creates `body_data` from name and arguments, without
-forwarding STS request metadata. In `mcp_server_manager.py`,
-`_call_regular_mcp_tool` constructs `MCPCallToolRequestParams` with only name
-and arguments. Finally `experimental_mcp_client/client.py` invokes the MCP SDK
-without metadata. All layers must preserve host metadata.
+LiteLLM 1.101.0 encaminha argumentos de ferramentas, mas não preserva `_meta`
+arbitrário até o SDK MCP upstream. A verificação reproduzível permanece em
+`scripts/check_litellm_metadata.py`.
 
-Our Notes and Agenda servers use `_meta.sts/idempotencyKey` for atomic durable
-replay and `_meta.sts/confirmed` for destructive operations. Without these,
-creation fails with a missing idempotency key and deletion/cancellation remains
-blocked. Adding confirmation to model arguments or generating a fresh key in
-LiteLLM would break the agreed security and retry contract.
+Os MCPs locais agora oferecem `-context-mode envelope`. Nesse modo, a descoberta
+expõe um envelope em `arguments`, mas o backend Go remove esse envelope antes de
+anunciar a ferramenta ao Nova. Depois da decisão do host, o Go envia:
 
-No runtime migration, backend switch, database changes, or proxy installation
-has been performed. The existing stdio backend remains operational.
-
-## Intended local topology after compatibility is resolved
-
-```mermaid
-flowchart TD
-    Client[Terminal / Apple apps] <-->|Voice WebSocket| Go[Go gateway]
-    Go <-->|Local WebSocket| Bridge[Python bridge]
-    Bridge <-->|Bidirectional streaming| Nova[Bedrock / Nova Sonic]
-    Go <-->|MCP Streamable HTTP + service key| Lite[Local LiteLLM Proxy]
-    Lite <-->|stdio| Notes[MCP Notes]
-    Lite <-->|stdio| Agenda[MCP Agenda]
-    Notes <--> NDB[(Notes SQLite)]
-    Agenda <--> ADB[(Agenda SQLite)]
-    Lite <--> PG[(Local PostgreSQL)]
-    Go --> Audit[(Existing operation audit)]
-    Admin[Local browser / admin] --> Lite
+```json
+{
+  "payload": {"argumentos": "originais"},
+  "host_context": {
+    "version": 1,
+    "audience": "memo",
+    "tool": "notes.create",
+    "payload_hash": "...",
+    "idempotency_key": "...",
+    "confirmed": false,
+    "expires_at": 1800000060,
+    "signature": "..."
+  }
+}
 ```
 
-LiteLLM and PostgreSQL bind only to loopback. The intended admin panel is
-`http://localhost:4000/ui`; neither that service nor its panel is running yet.
-Go retains orchestration, schema validation, confirmation, operation identity,
-and bounded results. LiteLLM owns centralized admission, server/tool grants,
-service-key rotation and call limits. Notes and Agenda retain transactional
-rules and durable replay. Nova traffic stays on its current bridge.
+A assinatura HMAC-SHA256 cobre servidor, ferramenta, hash canônico do payload,
+chave de operação, confirmação e validade de até 60 segundos. O MCP rejeita
+alteração, expiração, replay entre ferramentas/servidores e chamadas sem
+assinatura. O segredo deve ter exatamente 32 bytes em hexadecimal e nunca é
+enviado ao modelo. O modo legado `_meta` continua disponível para o backend
+stdio existente.
 
-Initial governance: separate admin/service keys, explicit server/tool grants,
-read-only and assistant profiles, `allow_all_keys` disabled, 60 tool calls/minute
-per server/key, and payload-free operational logs. Do not assume full MCP log
-visibility in the open source UI until the selected version is tested.
+## Inicialização
 
-## Required next milestone
+```bash
+cp deploy/litellm/.env.example deploy/litellm/.env
+# Substitua todos os valores; o segredo deve ter 64 caracteres hexadecimais.
+make litellm-up
+```
 
-Recommended resolution: use an upstream stable release that forwards custom
-call metadata across all three layers. An alternative is a maintained pinned
-LiteLLM patch; adopting that changes the dependency maintenance scope and needs
-an explicit decision. Do not ship a partial backend or silently bypass LiteLLM.
+Crie a chave de serviço e carregue os exports que o script imprime:
 
-After metadata works, validate the actual proxy against both real stdio servers:
-protocol version `2025-11-25`, preserved metadata, repeat/restart replay,
-confirmation expiry/refusal, permission enforcement on direct invocation,
-revoked keys, 429 limits, concurrency, timeout/unknown outcome, and absence of
-payloads in logs and persistence. Only then implement and enable the Go HTTP
-backend, preserving existing names and replay identities. No automatic mutation
-retry or fallback to direct stdio is allowed.
+```bash
+python3 scripts/litellm_service_key.py \
+  --master-key "$LITELLM_MASTER_KEY" > /private/tmp/sts-litellm-exports
+source /private/tmp/sts-litellm-exports
+export STS_MCP_CONTEXT_SECRET='<o mesmo segredo do compose>'
+export STS_PROVIDER=fake
+export STS_DEVELOPMENT_TOKEN=local
+make gateway
+```
 
-Sources: [MCP gateway](https://docs.litellm.ai/docs/mcp),
-[permissions and limits](https://docs.litellm.ai/docs/mcp_control),
-[official package](https://pypi.org/project/litellm/1.101.0/).
+O script concede somente os dois servidores e as sete ferramentas, com limite
+de 60 chamadas/minuto por servidor. `allow_all_keys` permanece desabilitado.
+Não use a chave administrativa no gateway Go.
+
+`general_settings.disable_spend_logs` fica habilitado porque os registros MCP
+do LiteLLM incluem argumentos e resultados. Assim, o painel oferece saúde,
+cadastro e administração, mas o histórico operacional sem conteúdo permanece
+na auditoria SQLite do Go. Habilitar a tela de logs de chamadas sem antes criar
+uma integração de redação armazenaria conteúdo de notas e agenda.
+
+Para encerrar os containers sem apagar os volumes:
+
+```bash
+make litellm-down
+```
+
+## Configuração do Go
+
+- `STS_MCP_BACKEND=litellm`
+- `STS_LITELLM_MCP_URL=http://127.0.0.1:4000`
+- `STS_LITELLM_API_KEY`: chave de serviço
+- `STS_MCP_CONTEXT_SECRET`: segredo compartilhado
+- `STS_LITELLM_MCP_SERVERS`: aliases, IDs estáveis, allowlists e políticas
+
+Esse modo é incompatível com `STS_MCP_COMMAND` e `STS_MCP_SERVERS`; combinações
+ambíguas falham na inicialização. Falhas do LiteLLM não causam retry automático
+de mutações nem fallback direto para stdio.
+
+## Validação local — 19/09/2026
+
+- LiteLLM 1.101.0 e PostgreSQL iniciaram saudáveis; painel `/ui/` respondeu 200.
+- A chave de serviço descobriu exatamente as sete ferramentas permitidas; o
+  limite `memo=60`, `local=60` foi persistido nos metadados da chave.
+- Notes atravessou Go client → LiteLLM REST → MCP stdio → SQLite: criação,
+  replay com a mesma identidade, bloqueio sem confirmação e exclusão confirmada.
+- Uma chamada REST direta com argumentos sem assinatura retornou resultado MCP
+  de erro; chave inválida retornou HTTP 401.
+- Os payloads sintéticos não apareceram nos logs do container com spend logs
+  desativados.
+- `make check` passou (build, testes, race detector e vet); os 15 testes Python
+  aplicáveis passaram, com um teste e2e opt-in não executado.
+
+Fontes: [MCP gateway](https://docs.litellm.ai/docs/mcp),
+[permissões e limites](https://docs.litellm.ai/docs/mcp_control),
+[especificação `_meta`](https://modelcontextprotocol.io/specification/2025-11-25/basic#meta).
