@@ -78,7 +78,51 @@ class DevTests(unittest.TestCase):
         self.assertEqual(env["AWS_PROFILE"], "TerraformUser")
         self.assertEqual(env["STS_GATEWAY_ADDRESS"], "0.0.0.0:8080")
         self.assertEqual(env["NOVA_BRIDGE_HOST"], "127.0.0.1")
-        self.assertEqual(len(json.loads(env["STS_MCP_SERVERS"])), 2)
+        self.assertNotIn("STS_MCP_SERVERS", env)
+
+    def test_litellm_backend_uses_selected_servers_and_service_key(self):
+        selected = dev.servers(2, False)
+        env = {}
+        local = {"LITELLM_MASTER_KEY": "admin", "LITELLM_SERVICE_KEY": "service-key",
+                 "STS_MCP_CONTEXT_SECRET": "0" * 64}
+        with patch.object(dev, "ensure_litellm_service_key", return_value="service-key"):
+            dev.configure_litellm_backend(env, selected, local)
+        configured = json.loads(env["STS_LITELLM_MCP_SERVERS"])
+        self.assertEqual(env["STS_MCP_BACKEND"], "litellm")
+        self.assertEqual(env["STS_LITELLM_API_KEY"], "service-key")
+        self.assertEqual([server["server_id"] for server in configured], ["sts-notes"])
+        self.assertNotIn("command", configured[0])
+
+    def test_running_litellm_can_be_preserved(self):
+        local = {"LITELLM_POSTGRES_PASSWORD": "db", "LITELLM_MASTER_KEY": "admin", "LITELLM_SERVICE_KEY": "key",
+                 "STS_MCP_CONTEXT_SECRET": "0" * 64}
+        with patch.object(dev, "load_local_litellm_env", return_value=local), \
+             patch.object(dev, "running_litellm_services", return_value={"postgres", "litellm"}), \
+             patch.object(dev, "yes", return_value=False), \
+             patch.object(dev, "wait_litellm_ready") as ready, \
+             patch.object(dev, "checked") as checked:
+            self.assertEqual(dev.ensure_litellm({}, False), local)
+        ready.assert_called_once()
+        checked.assert_not_called()
+
+    def test_stopped_litellm_is_started(self):
+        local = {"LITELLM_POSTGRES_PASSWORD": "db", "LITELLM_MASTER_KEY": "admin", "LITELLM_SERVICE_KEY": "key",
+                 "STS_MCP_CONTEXT_SECRET": "0" * 64}
+        with patch.object(dev, "load_local_litellm_env", return_value=local), \
+             patch.object(dev, "running_litellm_services", return_value=set()), \
+             patch.object(dev, "wait_litellm_ready"), patch.object(dev, "checked") as checked:
+            dev.ensure_litellm({}, False)
+        self.assertIn("up", checked.call_args.args[0])
+
+    def test_partial_litellm_requires_restart(self):
+        local = {"LITELLM_POSTGRES_PASSWORD": "db", "LITELLM_MASTER_KEY": "admin", "LITELLM_SERVICE_KEY": "key",
+                 "STS_MCP_CONTEXT_SECRET": "0" * 64}
+        with patch.object(dev, "load_local_litellm_env", return_value=local), \
+             patch.object(dev, "running_litellm_services", return_value={"postgres"}), \
+             patch.object(dev, "yes", return_value=False), patch.object(dev, "checked") as checked:
+            with self.assertRaises(RuntimeError):
+                dev.ensure_litellm({}, False)
+        checked.assert_not_called()
 
     def test_occupied_port_is_rejected_without_stopping_listener(self):
         with socket.socket() as listener:

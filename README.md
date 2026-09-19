@@ -14,6 +14,7 @@ The governed local setup, admin panel and service-key workflow are documented in
 - macOS 26 with Xcode 27
 - Go 1.27 or newer
 - Python 3.12 for the small Bedrock transport bridge
+- Docker Desktop para LiteLLM e PostgreSQL locais
 - An AWS account with Nova 2 Sonic access in `us-east-1`
 
 ## Configurar o ambiente para conectar à AWS
@@ -38,8 +39,10 @@ O assistente pergunta:
    é apenas para desenvolvimento; use um token forte para acesso pela rede local.
 
 Após o resumo e sua confirmação, verifica ferramentas/portas, autenticação AWS
-(Nova), compila os binários e inicia bridge + gateway supervisionados no mesmo
-terminal. Se faltar o ambiente Python, oferece instalar com `make nova-install`.
+(Nova), sobe LiteLLM + PostgreSQL em Docker, compila o gateway e inicia bridge +
+gateway supervisionados no mesmo terminal. Se os containers já estiverem
+ativos, pergunta se deseja reiniciá-los; recusar preserva o serviço saudável.
+Se faltar o ambiente Python, oferece instalar com `make nova-install`.
 Não cria perfis/recursos AWS nem altera IAM. Credenciais AWS não são salvas pelo
 assistente; somente o perfil selecionado é utilizado. Conversas Nova têm custos
 Bedrock; a checagem de prontidão não inicia inferência.
@@ -49,19 +52,23 @@ substitua `IP-DO-MAC` pelo IP do Mac na mesma rede. `ws://` não criptografa
 voz/token: habilite rede local somente em Wi-Fi privado confiável. A bridge
 permanece em `127.0.0.1:8091` mesmo nesse modo.
 
-`Ctrl+C` encerra somente os processos iniciados pelo assistente, incluindo os
-MCPs filhos. Se um serviço cair, ele encerra os demais e informa onde estão os
-logs. Se uma porta estiver ocupada por gateway/bridge reconhecido desta checkout
+`Ctrl+C` encerra gateway e bridge, mas preserva LiteLLM, PostgreSQL e os bancos.
+Os MCPs selecionados são iniciados pelo LiteLLM e o gateway recebe uma chave de
+serviço limitada às ferramentas escolhidas. Se um serviço supervisionado cair,
+o assistente encerra os demais e informa onde estão os logs. Se uma porta estiver
+ocupada por gateway/bridge reconhecido desta checkout
 e do mesmo usuário, mostra serviço/PID/porta e pergunta se deseja encerrá-lo
 antes de iniciar outro ambiente. A confirmação é obrigatória, interrompe
 conversas ativas e usa SIGTERM, sem encerramento forçado de serviços existentes.
 Processos desconhecidos são preservados: use outra porta ou encerre manualmente.
 Serviços iniciados por `go run` fora desse supervisor podem não ser reconhecidos.
-Bancos persistem em `data/`; logs privados em `logs/dev/`, ambos
-ignorados pelo Git. Configurações `STS_*`/`NOVA_*` herdadas são descartadas para
+Bancos do gateway persistem em `data/`; dados MCP ficam no volume Docker e logs
+privados em `logs/dev/`. Configurações `STS_*`/`NOVA_*` herdadas são descartadas para
 não ativar MCPs ou captura de evidência sem sua escolha. Cada execução preserva
 os aliases/políticas do exemplo MCP. Fixtures opt-in usam a reunião fictícia de
-16/05/2030, 10–11h; nenhum banco é apagado.
+16/05/2030, 10–11h e exigem reiniciar um LiteLLM já ativo para aplicar a opção;
+nenhum banco é apagado. As credenciais em `deploy/litellm/.env` são fictícias,
+fixas e destinadas somente ao ambiente local desta POC.
 
 Para conferir as escolhas sem autenticar, instalar, compilar ou iniciar:
 

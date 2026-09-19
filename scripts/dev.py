@@ -14,9 +14,14 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
+LITELLM_ENV = ROOT / "deploy/litellm/.env"
+LITELLM_COMPOSE = ROOT / "deploy/litellm/compose.yaml"
+LITELLM_URL = "http://127.0.0.1:4000"
+LITELLM_SERVICES = {"postgres", "litellm"}
 
 
 def choose(question: str, options: list[str], default: int) -> int:
@@ -75,9 +80,137 @@ def environment(provider: str, profile: str, lan: bool, token: str, selected: li
                NOVA_BRIDGE_HOST="127.0.0.1", NOVA_BRIDGE_PORT=str(bridge_port),
                PYTHONPATH=str(ROOT / "services/nova-bridge"))
     env.setdefault("GOCACHE", "/private/tmp/sts-go-cache")
-    if selected:
-        env["STS_MCP_SERVERS"] = json.dumps(selected)
     return env
+
+
+def load_local_litellm_env() -> dict[str, str]:
+    values = {}
+    try:
+        lines = LITELLM_ENV.read_text().splitlines()
+    except OSError as error:
+        raise RuntimeError(f"Configuração local ausente: {LITELLM_ENV}") from error
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or not key or any(char.isspace() for char in key):
+            raise RuntimeError(f"Linha inválida em {LITELLM_ENV.name}.")
+        values[key] = value
+    required = {"LITELLM_POSTGRES_PASSWORD", "LITELLM_MASTER_KEY", "LITELLM_SERVICE_KEY",
+                "STS_MCP_CONTEXT_SECRET"}
+    if not required.issubset(values):
+        raise RuntimeError(f"Preencha todas as chaves obrigatórias em {LITELLM_ENV}.")
+    secret = values["STS_MCP_CONTEXT_SECRET"]
+    if len(secret) != 64 or any(char not in "0123456789abcdef" for char in secret):
+        raise RuntimeError("STS_MCP_CONTEXT_SECRET deve ter 64 caracteres hexadecimais minúsculos.")
+    return values
+
+
+def compose_command(*arguments: str) -> list[str]:
+    return ["docker", "compose", "--env-file", str(LITELLM_ENV), "-f", str(LITELLM_COMPOSE), *arguments]
+
+
+def running_litellm_services(env: dict[str, str]) -> set[str]:
+    result = subprocess.run(compose_command("ps", "--status", "running", "--services"), cwd=ROOT, env=env,
+                            capture_output=True, text=True)
+    if result.returncode:
+        detail = result.stderr.strip().splitlines()
+        raise RuntimeError(f"Docker Compose indisponível: {detail[-1] if detail else 'verifique o Docker Desktop'}")
+    return set(result.stdout.split())
+
+
+def wait_litellm_ready(timeout: float = 90) -> None:
+    deadline = time.monotonic() + timeout
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    while time.monotonic() < deadline:
+        try:
+            with opener.open(LITELLM_URL + "/health/liveliness", timeout=1) as response:
+                if response.status == 200:
+                    return
+        except OSError:
+            pass
+        time.sleep(0.5)
+    raise RuntimeError("LiteLLM não ficou saudável no prazo. Consulte: docker compose -f deploy/litellm/compose.yaml logs")
+
+
+def ensure_litellm(env: dict[str, str], fixtures: bool) -> dict[str, str]:
+    local = load_local_litellm_env()
+    compose_env = dict(env)
+    compose_env.update(local)
+    compose_env["STS_AGENDA_FIXTURES"] = "enabled" if fixtures else "disabled"
+    active = running_litellm_services(compose_env)
+    start = not active
+    if active:
+        print(f"\nLiteLLM Docker ativo: {', '.join(sorted(active))}.")
+        if yes("Deseja reiniciar o LiteLLM e o PostgreSQL?"):
+            checked(compose_command("down"), compose_env)
+            start = True
+        elif active != LITELLM_SERVICES:
+            raise RuntimeError("Ambiente LiteLLM parcialmente ativo; autorize o reinício para recuperá-lo.")
+        elif fixtures:
+            raise RuntimeError("Semear a Agenda exige reiniciar o LiteLLM para aplicar a configuração.")
+        else:
+            print("Containers existentes preservados.")
+    if start:
+        print("\nIniciando LiteLLM e PostgreSQL locais…", flush=True)
+        checked(compose_command("up", "--build", "-d"), compose_env)
+    wait_litellm_ready()
+    print(f"LiteLLM pronto. Painel: {LITELLM_URL}/ui", flush=True)
+    return local
+
+
+def gateway_servers(selected: list[dict]) -> list[dict]:
+    ids = {"memo": "sts-notes", "local": "sts-agenda"}
+    return [{"alias": entry["alias"], "server_id": ids[entry["alias"]],
+             "allowed_tools": entry["allowed_tools"], "policies": entry["policies"]}
+            for entry in selected]
+
+
+def ensure_litellm_service_key(master_key: str, service_key: str, selected: list[dict]) -> str:
+    configured = gateway_servers(selected)
+    key_config = {
+        "key": service_key,
+        "object_permission": {
+            "mcp_servers": [server["server_id"] for server in configured],
+            "mcp_tool_permissions": {server["server_id"]: server["allowed_tools"] for server in configured},
+        },
+        "mcp_rpm_limit": {server["alias"]: 60 for server in configured},
+    }
+    headers = {"Authorization": "Bearer " + master_key, "Content-Type": "application/json"}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def request(path: str) -> None:
+        operation = urllib.request.Request(LITELLM_URL + path, data=json.dumps(key_config).encode(),
+                                           method="POST", headers=headers)
+        with opener.open(operation, timeout=15) as response:
+            json.load(response)
+
+    try:
+        request("/key/generate")
+    except urllib.error.HTTPError as error:
+        if error.code != 400:
+            raise RuntimeError("LiteLLM não configurou a chave de serviço local.") from error
+        try:
+            request("/key/update")
+        except (OSError, ValueError) as update_error:
+            raise RuntimeError("LiteLLM não atualizou a chave de serviço local.") from update_error
+    except (OSError, ValueError) as error:
+        raise RuntimeError("LiteLLM não configurou a chave de serviço local.") from error
+    return service_key
+
+
+def configure_litellm_backend(env: dict[str, str], selected: list[dict], local: dict[str, str]) -> None:
+    if not selected:
+        return
+    env.update(
+        STS_MCP_BACKEND="litellm",
+        STS_LITELLM_MCP_URL=LITELLM_URL,
+        STS_LITELLM_API_KEY=ensure_litellm_service_key(
+            local["LITELLM_MASTER_KEY"], local["LITELLM_SERVICE_KEY"], selected),
+        STS_MCP_CONTEXT_SECRET=local["STS_MCP_CONTEXT_SECRET"],
+        STS_LITELLM_MCP_SERVERS=json.dumps(gateway_servers(selected), separators=(",", ":")),
+    )
 
 
 def check_port(port: int, host: str = "127.0.0.1") -> None:
@@ -218,8 +351,8 @@ def wait_ready(children: list[subprocess.Popen], port: int) -> None:
     raise RuntimeError("O serviço não ficou pronto em 30 s. Consulte logs/dev/.")
 
 
-def run(env: dict[str, str], selected: list[dict], nova: bool) -> None:
-    for executable in ("go", "make") + (("aws",) if nova else ()):
+def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = False) -> None:
+    for executable in ("go", "make", "docker") + (("aws",) if nova else ()):
         if not shutil.which(executable):
             raise RuntimeError(f"Ferramenta ausente: {executable}. Veja os pré-requisitos no README.")
     gateway_port = int(env["STS_GATEWAY_ADDRESS"].rsplit(":", 1)[1])
@@ -236,12 +369,11 @@ def run(env: dict[str, str], selected: list[dict], nova: bool) -> None:
                 raise RuntimeError("Instale a ponte com make nova-install e tente novamente.")
             checked(["make", "nova-install"], env)
         checked([str(interpreter), "-c", "import nova_bridge.server"], env)
-    print("\nCompilando gateway e MCPs selecionados…", flush=True)
+    local_litellm = ensure_litellm(env, fixtures)
+    configure_litellm_backend(env, selected, local_litellm)
+    print("\nCompilando gateway…", flush=True)
     (ROOT / "bin").mkdir(exist_ok=True)
     checked(["go", "build", "-o", str(ROOT / "bin/gateway"), "./cmd/gateway"], env)
-    for entry in selected:
-        name = Path(entry["command"]).name
-        checked(["go", "build", "-o", entry["command"], f"./cmd/{name}"], env)
     (ROOT / "data").mkdir(exist_ok=True)
     logs = ROOT / "logs/dev"
     logs.mkdir(parents=True, exist_ok=True)
@@ -264,8 +396,8 @@ def run(env: dict[str, str], selected: list[dict], nova: bool) -> None:
         print(f"  URL: ws://{host}:{gateway_port}/v1/voice")
         print(f"  Provider: {env['STS_PROVIDER']}")
         print(f"  Token local: {env['STS_DEVELOPMENT_TOKEN']}")
-        print("Os MCPs selecionados iniciam por sessão de voz, não como serviços TCP.")
-        print("Ctrl+C encerra os serviços deste assistente; os bancos são preservados.", flush=True)
+        print("Os MCPs selecionados são mediados pelo LiteLLM local." if selected else "Nenhum MCP selecionado.")
+        print("Ctrl+C encerra gateway/ponte; LiteLLM e bancos permanecem ativos.", flush=True)
         while True:
             if any(child.poll() is not None for child in children):
                 raise RuntimeError("Um serviço encerrou. O assistente vai parar os demais; consulte logs/dev/.")
@@ -315,7 +447,7 @@ def main() -> int:
         print("Conversas Nova geram custos Bedrock. Iniciar os serviços não abre inferência automaticamente.")
     if not yes("Iniciar este ambiente?"):
         return 0
-    run(env, selected, nova)
+    run(env, selected, nova, fixtures)
     return 0
 
 

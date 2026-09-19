@@ -29,6 +29,7 @@ mcp_servers:
     args: ["-db", "/data/agenda.sqlite", "-context-mode", "envelope"]
     env:
       STS_MCP_CONTEXT_SECRET: os.environ/STS_MCP_CONTEXT_SECRET
+      STS_AGENDA_FIXTURES: "os.environ/STS_AGENDA_FIXTURES"
     allowed_tools: [agenda.list_slots, agenda.list_events, agenda.create_event, agenda.cancel_event]
     allow_all_keys: false
     available_on_public_internet: true

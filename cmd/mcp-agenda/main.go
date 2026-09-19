@@ -5,6 +5,8 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"strconv"
+
 	"stsmodel.local/poc/internal/mcp"
 	"stsmodel.local/poc/internal/storage"
 )
@@ -14,6 +16,17 @@ func main() {
 	fixtures := flag.Bool("fixtures", false, "seed deterministic fictitious appointments")
 	mode := flag.String("context-mode", "meta", "host context transport: meta or envelope")
 	flag.Parse()
+	if raw := os.Getenv("STS_AGENDA_FIXTURES"); raw != "" {
+		enabled, parseErr := strconv.ParseBool(raw)
+		if raw == "enabled" || raw == "disabled" {
+			enabled, parseErr = raw == "enabled", nil
+		}
+		if parseErr != nil {
+			slog.Error("invalid agenda fixtures configuration")
+			os.Exit(1)
+		}
+		*fixtures = *fixtures || enabled
+	}
 	codec, err := mcp.ServerEnvelope(*mode, "local")
 	if err != nil {
 		slog.Error("invalid MCP context configuration")
