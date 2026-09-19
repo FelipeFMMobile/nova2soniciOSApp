@@ -9,6 +9,21 @@ MCP access can run directly over stdio or through the local LiteLLM gateway.
 The governed local setup, admin panel and service-key workflow are documented in
 [docs/litellm-mcp-gateway.md](docs/litellm-mcp-gateway.md).
 
+## Arquitetura
+
+![Arquitetura da POC Nova Voice com gateway MCP LiteLLM](docs/images/architecture-litellm.png)
+
+O app conversa com o gateway Go por WebSocket. O stream de voz segue pela ponte
+Python até o Nova 2 Sonic no Bedrock. Chamadas MCP seguem por uma rota separada:
+o Go aplica schemas, políticas, confirmação e identidade da operação; o LiteLLM
+autentica a chave de serviço, limita servidores/ferramentas e encaminha o
+envelope assinado para Notes ou Agenda. LiteLLM, PostgreSQL e os MCPs rodam
+localmente em Docker; o painel administrativo fica em
+<http://127.0.0.1:4000/ui>.
+
+O PNG é gerado por `scripts/render_architecture.swift`. Execute
+`make architecture-diagram` depois de alterar o desenho.
+
 ## Prerequisites
 
 - macOS 26 with Xcode 27
