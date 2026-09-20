@@ -110,7 +110,7 @@ NSBezierPath(rect: NSRect(x: 0, y: 0, width: width, height: height)).fill()
 // Header and external systems.
 text("Nova Voice — arquitetura da POC com LiteLLM", x: 80, y: 44, w: 1000, h: 52,
      size: 38, weight: .bold, align: .left)
-text("Gateway e orquestração em Go · governança MCP local · Nova 2 Sonic no Amazon Bedrock",
+text("Gateway e orquestração em Go · LiteLLM Realtime · custos no Usage/Spend",
      x: 80, y: 102, w: 1250, h: 34, size: 22, align: .left)
 
 box(235, 165, 620, 120, title: "App SwiftUI · macOS / iOS",
@@ -137,23 +137,23 @@ box(110, 660, 380, 145, title: "Orquestrador de ferramentas",
 box(555, 660, 380, 145, title: "Adaptador Nova",
     lines: ["Áudio, transcrições e toolUse", "Mapeamento de eventos"], titleSize: 23, bodySize: 18)
 
-// Bridge, audit and cloud.
-box(1080, 475, 630, 165, title: "Nova Bridge · Python · porta 8091",
-    lines: ["Prompt e especificação das tools", "SDK AWS · credenciais do perfil", "Transporte bidirecional do Bedrock"],
+// LiteLLM owns the cloud boundary and cost metadata.
+box(1080, 475, 630, 165, title: "LiteLLM Realtime · porta 4000",
+    lines: ["Chave virtual sts-go-gateway", "Perfil AWS somente leitura", "WebSocket → Bedrock / Nova"],
     titleSize: 23, bodySize: 18)
-box(1080, 710, 630, 130, title: "SQLite de auditoria",
-    lines: ["Sessões, turnos e operações · sem payload sensível"], fill: dbFill, titleSize: 23, bodySize: 18)
+box(1080, 710, 630, 130, title: "PostgreSQL · Usage / Spend",
+    lines: ["Modelo, chave, sessão e custo · sem conteúdo"], fill: dbFill, titleSize: 23, bodySize: 18)
 
 // Docker / LiteLLM boundary.
 rounded(rect(75, 900, 1635, 580), fill: dockerFill,
         stroke: NSColor(calibratedRed: 0.56, green: 0.48, blue: 0.76, alpha: 1), radius: 22, width: 2)
-text("DOCKER LOCAL · GOVERNANÇA MCP", x: 100, y: 925, w: 600, h: 34,
+text("DOCKER LOCAL · LITELLM, POSTGRESQL E MCP", x: 100, y: 925, w: 720, h: 34,
      size: 22, weight: .bold, color: purple, align: .left)
 box(110, 975, 500, 165, title: "LiteLLM MCP Gateway · porta 4000",
     lines: ["REST MCP · autenticação por service key", "Grants por servidor/tool · 60 RPM", "Encaminha envelope assinado nos arguments"],
     fill: white, stroke: purple, titleSize: 22, bodySize: 17)
-box(665, 975, 390, 165, title: "PostgreSQL · LiteLLM",
-    lines: ["Chaves, permissões e configuração", "Spend logs desativados para não persistir payloads"],
+box(665, 975, 390, 165, title: "Chave virtual",
+    lines: ["Modelo nova-sonic", "/v1/realtime + MCPs autorizados"],
     fill: dbFill, stroke: purple, titleSize: 22, bodySize: 16)
 box(1110, 975, 555, 165, title: "Painel administrativo local",
     lines: ["http://127.0.0.1:4000/ui", "Saúde · MCPs · chaves · permissões"],
@@ -176,11 +176,11 @@ arrow([(745, 605), (745, 660)], both: true)
 arrow([(620, 605), (620, 632), (300, 632), (300, 660)], both: true)
 pill("toolUse / resultado", x: 360, y: 613, w: 190)
 arrow([(935, 735), (1015, 735), (1015, 558), (1080, 558)], both: true)
-pill("WS privado", x: 915, y: 648, w: 120)
+pill("Realtime + service key", x: 895, y: 648, w: 190)
 arrow([(1395, 475), (1395, 290)], both: true)
 pill("Stream AWS autenticado", x: 1280, y: 360, w: 230)
-arrow([(935, 540), (1005, 540), (1005, 775), (1080, 775)])
-pill("auditoria", x: 970, y: 590, w: 105)
+arrow([(1395, 640), (1395, 710)])
+pill("spend metadata", x: 1270, y: 660, w: 160)
 
 // Governed MCP path.
 arrow([(300, 805), (300, 875), (360, 875), (360, 975)], both: true, color: purple)
@@ -197,7 +197,7 @@ arrow([(755, 1325), (755, 1370)], both: true)
 // Footer.
 text("A Nova escolhe as tools; o Go valida intenção, confirmação, schema e identidade da operação.",
      x: 80, y: 1572, w: 1640, h: 28, size: 20, weight: .semibold, align: .left)
-text("O LiteLLM governa acesso e limites MCP. O stream de voz para o Bedrock não passa pelo LiteLLM.",
+text("Somente o LiteLLM possui credenciais AWS e registra Usage/Spend sem conteúdo da conversa.",
      x: 80, y: 1607, w: 1640, h: 28, size: 18, align: .left)
 
 context.flushGraphics()

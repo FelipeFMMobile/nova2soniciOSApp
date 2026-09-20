@@ -35,9 +35,7 @@ func (b *testTools) Call(ctx context.Context, name string, _ json.RawMessage, _ 
 	return mcp.TextResult(map[string]any{"status": "ok", "tool": name, "value": "exclusive 7419"}, false), nil
 }
 func nativeTool(c *websocket.Conn, id, name, args string) {
-	_ = rawEvent(c, "contentStart", map[string]any{"contentId": id, "type": "TOOL", "role": "TOOL"})
-	_ = rawEvent(c, "toolUse", map[string]any{"contentId": id, "toolUseId": id, "toolName": name, "content": args, "role": "TOOL"})
-	_ = rawEvent(c, "contentEnd", map[string]any{"contentId": id, "type": "TOOL", "stopReason": "TOOL_USE"})
+	_ = c.WriteJSON(map[string]any{"type": "response.function_call_arguments.done", "item_id": "item-" + id, "call_id": id, "name": name, "arguments": args})
 }
 func waitTool(c *websocket.Conn) map[string]any {
 	for {
@@ -45,15 +43,14 @@ func waitTool(c *websocket.Conn) map[string]any {
 		if c.ReadJSON(&value) != nil {
 			return nil
 		}
-		if value["type"] == "tool.result" {
+		if value["type"] == "conversation.item.create" {
 			return value
 		}
 	}
 }
 func userPhrase(c *websocket.Conn, id, text string) {
-	_ = rawEvent(c, "contentStart", map[string]any{"contentId": id, "type": "TEXT", "role": "USER", "additionalModelFields": `{"generationStage":"FINAL"}`})
-	_ = rawEvent(c, "textOutput", map[string]any{"contentId": id, "content": text})
-	_ = rawEvent(c, "contentEnd", map[string]any{"contentId": id, "stopReason": "PARTIAL_TURN"})
+	_ = c.WriteJSON(map[string]any{"type": "conversation.item.input_audio_transcription.delta", "item_id": id, "delta": text})
+	_ = c.WriteJSON(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": id, "transcript": text})
 }
 func TestNovaDiscoversAndExecutesMCP(t *testing.T) {
 	seen := make(chan map[string]any, 1)
@@ -76,7 +73,7 @@ func TestNovaDiscoversAndExecutesMCP(t *testing.T) {
 	})
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	cfg.NovaBridgeURL = url
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 	cfg.MCPAllowedTools = []string{"notes.list"}
 	s, _, ws := setup(t, cfg)
 	backend := &testTools{}
@@ -84,7 +81,8 @@ func TestNovaDiscoversAndExecutesMCP(t *testing.T) {
 	c := dial(t, ws, "")
 	sid := startNova(t, c)
 	start := <-seen
-	tools, ok := start["tools"].([]any)
+	session, _ := start["session"].(map[string]any)
+	tools, ok := session["tools"].([]any)
 	if !ok || len(tools) != 1 {
 		t.Fatal("tools not advertised", start)
 	}
@@ -125,7 +123,7 @@ func TestNovaDeletionRequiresLaterFinalUserConfirmation(t *testing.T) {
 	})
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	cfg.NovaBridgeURL = url
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 	cfg.MCPAllowedTools = []string{"notes.delete"}
 	s, _, ws := setup(t, cfg)
 	backend := &testTools{}
@@ -164,7 +162,7 @@ func TestNovaToolTimeoutReturnsFailure(t *testing.T) {
 	})
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	cfg.NovaBridgeURL = url
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 	cfg.MCPAllowedTools = []string{"notes.list"}
 	cfg.MCPTimeout = 20 * time.Millisecond
 	s, _, ws := setup(t, cfg)
@@ -202,15 +200,15 @@ func TestGatewayRealStdioSQLiteRetryAcrossSessions(t *testing.T) {
 	t.Setenv("STS_GATEWAY_MCP_HELPER", "1")
 	t.Setenv("STS_GATEWAY_MCP_DB", db)
 	url := bridge(t, func(c *websocket.Conn, start map[string]any) {
-		tools, ok := start["tools"].([]any)
+		session, _ := start["session"].(map[string]any)
+		tools, ok := session["tools"].([]any)
 		if !ok || len(tools) != 1 {
 			t.Error("no MCP tools advertised")
 			return
 		}
-		spec := tools[0].(map[string]any)["toolSpec"].(map[string]any)
-		schema, ok := spec["inputSchema"].(map[string]any)["json"].(string)
-		if !ok || !json.Valid([]byte(schema)) {
-			t.Error("Bedrock wire schema must be encoded JSON string")
+		function, _ := tools[0].(map[string]any)["function"].(map[string]any)
+		if function["name"] != "notes_create" || function["parameters"] == nil {
+			t.Error("OpenAI function schema missing", tools[0])
 			return
 		}
 		var input map[string]any
@@ -229,8 +227,7 @@ func TestGatewayRealStdioSQLiteRetryAcrossSessions(t *testing.T) {
 	})
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	cfg.NovaBridgeURL = url
-	cfg.DatabasePath = db
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 	cfg.MCPCommand = os.Args[0]
 	cfg.MCPArgs = []string{"-test.run=^TestGatewayMCPHelper$"}
 	cfg.MCPAllowedTools = []string{"notes.create"}
@@ -277,7 +274,7 @@ func TestMicrophoneContinuesWhileMCPRuns(t *testing.T) {
 		nativeUser(c, "u-1")
 		nativeTool(c, "tool-1", "notes_list", `{}`)
 		for c.ReadJSON(&input) == nil {
-			if input["type"] == "audio.append" {
+			if input["type"] == "input_audio_buffer.append" {
 				forwarded <- struct{}{}
 				break
 			}
@@ -292,7 +289,7 @@ func TestMicrophoneContinuesWhileMCPRuns(t *testing.T) {
 	})
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	cfg.NovaBridgeURL = url
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 	cfg.MCPAllowedTools = []string{"notes.list"}
 	s, _, ws := setup(t, cfg)
 	backend := &testTools{delay: 200 * time.Millisecond}

@@ -20,7 +20,7 @@ func TestLiteLLMLocalGateway(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	gateway, err := mcp.NewGateway(ctx, os.Getenv("STS_LITELLM_MCP_URL"), os.Getenv("STS_LITELLM_API_KEY"), os.Getenv("STS_MCP_CONTEXT_SECRET"), configs, 10*time.Second)
+	gateway, err := mcp.NewGateway(ctx, os.Getenv("STS_LITELLM_URL"), os.Getenv("STS_LITELLM_API_KEY"), os.Getenv("STS_MCP_CONTEXT_SECRET"), configs, 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

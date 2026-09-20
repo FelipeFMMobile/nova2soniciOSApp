@@ -29,10 +29,17 @@ services:
       STS_AGENDA_FIXTURES: ${STS_AGENDA_FIXTURES:-disabled}
       LITELLM_LOG: ${LITELLM_LOG:-INFO}
       LITELLM_MCP_STDIO_EXTRA_COMMANDS: mcp-notes,mcp-agenda
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      AWS_SDK_LOAD_CONFIG: "1"
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
       - litellm-mcp-data:/data
+      # The selected profile is readable only by LiteLLM. The Go gateway never
+      # receives AWS_* variables or a credentials mount.
+      - ${HOME}/.aws:/root/.aws:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')"]
       interval: 3s

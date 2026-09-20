@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,9 +18,8 @@ type Config struct {
 	GatewayAddress    string
 	DevelopmentToken  string
 	Provider          string
-	NovaBridgeURL     string
 	NovaMaxSessionAge time.Duration
-	DatabasePath      string
+	LiteLLMModel      string
 	MCPServers        []mcp.ServerConfig
 	MCPEvidencePath   string
 	MCPCommand        string
@@ -62,13 +62,12 @@ func Load() (Config, error) {
 		GatewayAddress:    env("STS_GATEWAY_ADDRESS", "127.0.0.1:8080"),
 		DevelopmentToken:  os.Getenv("STS_DEVELOPMENT_TOKEN"),
 		Provider:          env("STS_PROVIDER", "fake"),
-		NovaBridgeURL:     env("STS_NOVA_BRIDGE_URL", "ws://127.0.0.1:8091"),
 		NovaMaxSessionAge: duration("STS_NOVA_MAX_SESSION_AGE", 7*time.Minute+30*time.Second),
-		DatabasePath:      env("STS_DATABASE_PATH", "./data/sts.sqlite"),
+		LiteLLMModel:      env("STS_LITELLM_REALTIME_MODEL", "nova-sonic"),
 		MCPCommand:        os.Getenv("STS_MCP_COMMAND"),
 		MCPTimeout:        duration("STS_MCP_TIMEOUT", 10*time.Second),
 		MCPBackend:        env("STS_MCP_BACKEND", "stdio"),
-		LiteLLMURL:        os.Getenv("STS_LITELLM_MCP_URL"),
+		LiteLLMURL:        os.Getenv("STS_LITELLM_URL"),
 		LiteLLMAPIKey:     os.Getenv("STS_LITELLM_API_KEY"),
 		MCPContextSecret:  os.Getenv("STS_MCP_CONTEXT_SECRET"),
 		MCPAllowedTools:   strings.Split(env("STS_MCP_ALLOWED_TOOLS", "notes.create,notes.list,notes.delete"), ","),
@@ -97,6 +96,15 @@ func Load() (Config, error) {
 		}
 		if cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" {
 			return Config{}, fmt.Errorf("LiteLLM URL and API key required")
+		}
+	}
+	if cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || strings.TrimSpace(cfg.LiteLLMModel) == "") {
+		return Config{}, fmt.Errorf("Nova requires LiteLLM URL, API key and realtime model")
+	}
+	if cfg.LiteLLMURL != "" {
+		parsed, err := url.Parse(cfg.LiteLLMURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return Config{}, fmt.Errorf("STS_LITELLM_URL must be an HTTP(S) base URL")
 		}
 	}
 

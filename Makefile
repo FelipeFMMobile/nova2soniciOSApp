@@ -1,13 +1,12 @@
 SHELL := /bin/zsh
 GOCACHE ?= /private/tmp/sts-go-cache
-NOVA_OUTPUT ?= /private/tmp/sts-nova-response.wav
 NOVA_GATEWAY_OUTPUT ?= /private/tmp/sts-nova-gateway-response.wav
 NOVA_BARGE_OUTPUT ?= /private/tmp/sts-nova-gateway-barge-response.wav
 APPLE_PROJECT := apps/apple/NovaVoice.xcodeproj
 APPLE_BUILD_ROOT ?= /private/tmp/sts-apple
 APPLE_SIMULATOR_ID ?= 599499E4-DD38-4C6C-9459-D4FDA8B2AE43
 
-.PHONY: build test race vet gateway mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-install nova-test nova-bridge nova-smoke nova-demo nova-barge-demo
+.PHONY: build test race vet gateway mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-demo nova-barge-demo
 .PHONY: apple-core-test apple-build-macos apple-build-ios apple-ui-test
 .PHONY: dev dev-plan dev-test architecture-diagram
 .PHONY: litellm-up litellm-down
@@ -80,19 +79,6 @@ voice-demo:
 
 voice-cancel:
 	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -cancel-after 120ms
-
-nova-install:
-	python3.12 -m venv services/nova-bridge/.venv
-	services/nova-bridge/.venv/bin/pip install -r services/nova-bridge/requirements.txt
-
-nova-test:
-	PYTHONPATH=services/nova-bridge services/nova-bridge/.venv/bin/python -m unittest discover -s tests/python -v
-
-nova-bridge:
-	PYTHONPATH=services/nova-bridge services/nova-bridge/.venv/bin/python -m nova_bridge.server
-
-nova-smoke:
-	services/nova-bridge/.venv/bin/python tests/e2e/nova_realtime_smoke.py "$(WAV)" --output "$(NOVA_OUTPUT)"
 
 nova-demo:
 	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -provider nova -wav "$(WAV)" -output "$(NOVA_GATEWAY_OUTPUT)"

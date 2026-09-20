@@ -62,7 +62,7 @@ started:
 	if tools != nil {
 		defer tools.Close()
 	}
-	stream, err := nova.Open(ctx, s.cfg.NovaBridgeURL, nil, tools.specs())
+	stream, err := nova.Open(ctx, s.cfg.LiteLLMURL, s.cfg.LiteLLMAPIKey, s.cfg.LiteLLMModel, sessionID, namespace, nil, tools.specs())
 	if err != nil {
 		sendError("provider_unavailable", err.Error())
 		return
@@ -94,10 +94,6 @@ started:
 	completedUserTurn := ""
 	emit := func(events []protocol.Event) bool {
 		for _, event := range events {
-			if tools.turn(event) != nil {
-				sendError("storage_failed", "cannot persist turn lifecycle")
-				return false
-			}
 			if event.Type == protocol.SessionState && event.State == session.Responding && turnTimeout == nil {
 				turnTimer.Reset(s.cfg.TurnTimeout)
 				turnTimeout = turnTimer.C
@@ -130,7 +126,7 @@ started:
 			tools.session.Interrupt()
 			clear(tools.staged)
 		}
-		replacement, err := nova.Open(ctx, s.cfg.NovaBridgeURL, history, tools.specs())
+		replacement, err := nova.Open(ctx, s.cfg.LiteLLMURL, s.cfg.LiteLLMAPIKey, s.cfg.LiteLLMModel, sessionID, namespace, history, tools.specs())
 		if err != nil {
 			sendError("provider_unavailable", "Nova session renewal failed")
 			return false
@@ -255,14 +251,6 @@ started:
 				sendError("storage_failed", "cannot persist private evidence")
 				return
 			}
-			state := "completed"
-			if finished.result.IsError {
-				state = "failed_or_unknown"
-			}
-			if tools.record(finished.job, state) != nil {
-				sendError("storage_failed", "tool outcome could not be recorded; retry with the same requestId")
-				return
-			}
 			if stream.SendToolResult(finished.job.ID, finished.result) != nil {
 				sendError("provider_unavailable", "Nova tool result delivery failed; retry mutations with the same requestId")
 				return
@@ -349,17 +337,6 @@ started:
 							immediate = &r
 						}
 						if immediate != nil {
-							state := "rejected"
-							if !immediate.IsError {
-								state = "replayed"
-								if mcp.Status(*immediate) == "confirmation_required" {
-									state = "confirmation_required"
-								}
-							}
-							if tools.record(job, state) != nil {
-								sendError("storage_failed", "cannot persist tool decision")
-								return
-							}
 							if tools.evidenceResult(job, *immediate) != nil {
 								sendError("storage_failed", "cannot persist private evidence")
 								return
@@ -377,10 +354,6 @@ started:
 								}
 							}
 						} else {
-							if tools.record(job, "running") != nil {
-								sendError("storage_failed", "cannot persist tool operation; no action executed")
-								return
-							}
 							tools.start(job, func(parent context.Context, j orchestrator.Job) mcp.Result {
 								deadline, cancel := context.WithTimeout(parent, s.cfg.MCPTimeout)
 								defer cancel()

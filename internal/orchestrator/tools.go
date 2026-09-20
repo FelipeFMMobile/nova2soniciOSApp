@@ -15,6 +15,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"stsmodel.local/poc/internal/mcp"
 	"stsmodel.local/poc/internal/protocol"
+	"stsmodel.local/poc/internal/provider"
 )
 
 type Backend interface {
@@ -40,7 +41,7 @@ type Session struct {
 	intentText string
 	backend    Backend
 	tools      map[string]binding
-	Specs      []map[string]any
+	Specs      []provider.ToolSpec
 	namespace  string
 	Pending    *Pending
 	seen       map[string]string
@@ -100,9 +101,7 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 		if policy == mcp.ConfirmLater {
 			description += " Esta ação exige confirmação do usuário em um turno posterior. Se receber confirmation_required, peça confirmo excluir (notas), confirmo cancelar agendamento (agenda) ou confirmo executar, depois chame novamente com os mesmos argumentos."
 		}
-		// Bedrock's bidirectional wire format requires a JSON-encoded string,
-		// unlike MCP's inputSchema object (and some simplified AWS examples).
-		s.Specs = append(s.Specs, map[string]any{"toolSpec": map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"json": string(tool.InputSchema)}}})
+		s.Specs = append(s.Specs, provider.ToolSpec{Name: name, Description: description, Parameters: append(json.RawMessage(nil), tool.InputSchema...)})
 	}
 	if len(s.Specs) == 0 {
 		return nil, errors.New("no allowed MCP tools discovered")

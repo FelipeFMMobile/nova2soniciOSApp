@@ -75,24 +75,20 @@ func TestTerminalNativeBargeInRetainsOnlyNewResponse(t *testing.T) {
 		}
 		defer c.Close()
 		_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_ = c.WriteJSON(map[string]any{"type": "session.created", "session": map[string]any{}})
 		var request map[string]any
 		if c.ReadJSON(&request) != nil {
 			return
 		}
-		_ = c.WriteJSON(map[string]string{"type": "session.ready"})
-		send := func(kind string, fields any) {
-			_ = c.WriteJSON(map[string]any{"type": "nova.event", "payload": map[string]any{"event": map[string]any{kind: fields}}})
-		}
+		_ = c.WriteJSON(map[string]any{"type": "session.updated", "session": map[string]any{}})
 		start := func(id string) {
-			send("contentStart", map[string]any{"contentId": "u-" + id, "type": "TEXT", "role": "USER", "additionalModelFields": `{"generationStage":"FINAL"}`})
-			send("textOutput", map[string]any{"contentId": "u-" + id, "content": "Fala"})
-			send("contentEnd", map[string]any{"contentId": "u-" + id, "type": "TEXT", "stopReason": "END_TURN"})
-			send("contentStart", map[string]any{"contentId": "a-" + id, "type": "AUDIO", "role": "ASSISTANT", "audioOutputConfiguration": map[string]any{"sampleRateHertz": 24000}})
-			send("audioOutput", map[string]any{"contentId": "a-" + id, "content": "AAAAAA=="})
+			_ = c.WriteJSON(map[string]any{"type": "conversation.item.input_audio_transcription.completed", "item_id": "u-" + id, "transcript": "Fala"})
+			_ = c.WriteJSON(map[string]any{"type": "response.content_part.added", "item_id": "a-" + id, "content_index": 0, "part": map[string]any{"type": "audio"}})
+			_ = c.WriteJSON(map[string]any{"type": "response.audio.delta", "item_id": "a-" + id, "content_index": 0, "delta": "AAAAAA=="})
 		}
 		first := true
 		for c.ReadJSON(&request) == nil {
-			if request["type"] != "audio.append" {
+			if request["type"] != "input_audio_buffer.append" {
 				continue
 			}
 			encoded, _ := request["audio"].(string)
@@ -103,9 +99,10 @@ func TestTerminalNativeBargeInRetainsOnlyNewResponse(t *testing.T) {
 				continue
 			}
 			if len(pcm) > 0 && pcm[0] != 0 {
-				send("textOutput", map[string]any{"contentId": "a-first", "content": `{"interrupted":true}`})
+				_ = c.WriteJSON(map[string]any{"type": "input_audio_buffer.speech_started", "item_id": "u-second"})
 				start("second")
-				send("contentEnd", map[string]any{"contentId": "a-second", "type": "AUDIO", "stopReason": "END_TURN"})
+				_ = c.WriteJSON(map[string]any{"type": "response.audio.done", "item_id": "a-second", "content_index": 0})
+				_ = c.WriteJSON(map[string]any{"type": "response.done", "response": map[string]any{"status": "completed"}})
 				break
 			}
 		}
@@ -114,7 +111,9 @@ func TestTerminalNativeBargeInRetainsOnlyNewResponse(t *testing.T) {
 	}))
 	defer bridge.Close()
 	t.Setenv("STS_PROVIDER", "nova")
-	t.Setenv("STS_NOVA_BRIDGE_URL", "ws"+strings.TrimPrefix(bridge.URL, "http"))
+	t.Setenv("STS_LITELLM_URL", bridge.URL)
+	t.Setenv("STS_LITELLM_API_KEY", "service-key")
+	t.Setenv("STS_LITELLM_REALTIME_MODEL", "nova-sonic")
 	t.Setenv("STS_DEVELOPMENT_TOKEN", "demo-secret")
 	cfg, err := config.Load()
 	if err != nil {

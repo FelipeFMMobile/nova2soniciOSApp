@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
-	"time"
 
 	"stsmodel.local/poc/internal/mcp"
 	"stsmodel.local/poc/internal/orchestrator"
 	"stsmodel.local/poc/internal/protocol"
-	"stsmodel.local/poc/internal/storage"
+	"stsmodel.local/poc/internal/provider"
 )
 
 type toolDone struct {
@@ -27,7 +26,6 @@ type toolRuntime struct {
 	wg           sync.WaitGroup
 	active       map[string]bool
 	staged       map[string]protocol.Event
-	audit        *storage.Store
 	sessionID    string
 }
 
@@ -80,16 +78,6 @@ func (s *Server) openTools(ctx context.Context, namespace, sessionID string) (*t
 		return nil, err
 	}
 	runtime := &toolRuntime{session: session, ctx: toolCtx, cancel: cancel, closeBackend: closeBackend, done: make(chan toolDone, 4), active: map[string]bool{}, staged: map[string]protocol.Event{}, sessionID: sessionID}
-	if s.cfg.DatabasePath != "" {
-		runtime.audit, err = storage.Open(s.cfg.DatabasePath)
-		if err == nil {
-			err = runtime.audit.StartSession(ctx, sessionID, namespace)
-		}
-		if err != nil {
-			runtime.Close()
-			return nil, err
-		}
-	}
 	runtime.evidence, err = openEvidence(s.cfg.MCPEvidencePath)
 	if err != nil {
 		runtime.Close()
@@ -104,30 +92,8 @@ func (t *toolRuntime) Close() {
 	if t.evidence != nil {
 		t.evidence.Close()
 	}
-	if t.audit != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = t.audit.EndSession(ctx, t.sessionID)
-		_ = t.audit.Close()
-	}
 }
-func (t *toolRuntime) record(job orchestrator.Job, state string) error {
-	if t == nil || t.audit == nil {
-		return nil
-	}
-	return t.audit.RecordTool(t.ctx, t.sessionID, job.ID, job.TurnID, job.Name, job.Key, state)
-}
-func (t *toolRuntime) turn(e protocol.Event) error {
-	if t == nil || t.audit == nil {
-		return nil
-	}
-	switch e.Type {
-	case protocol.TurnStarted, protocol.TurnCompleted, protocol.TurnInterrupted:
-		return t.audit.RecordTurn(t.ctx, t.sessionID, e.TurnID, e.Type)
-	}
-	return nil
-}
-func (t *toolRuntime) specs() []map[string]any {
+func (t *toolRuntime) specs() []provider.ToolSpec {
 	if t == nil {
 		return nil
 	}

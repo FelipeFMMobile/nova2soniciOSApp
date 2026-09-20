@@ -54,8 +54,8 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if cfg.MCPTimeout <= 0 {
 		return nil, fmt.Errorf("MCP timeout must be positive")
 	}
-	if cfg.Provider == "nova" && (cfg.NovaBridgeURL == "" || cfg.NovaMaxSessionAge <= 0) {
-		return nil, fmt.Errorf("Nova requires a bridge URL and positive session age")
+	if cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || cfg.LiteLLMModel == "" || cfg.NovaMaxSessionAge <= 0) {
+		return nil, fmt.Errorf("Nova requires LiteLLM configuration and positive session age")
 	}
 	if cfg.MaxSessions <= 0 || cfg.MaxEventBytes <= 0 || cfg.ReadTimeout <= 0 || cfg.WriteTimeout <= 0 || cfg.IdleTimeout < time.Millisecond || cfg.TurnTimeout <= 0 {
 		return nil, fmt.Errorf("gateway limits and timeouts must be positive")
@@ -96,7 +96,7 @@ func (s *Server) authorize(next http.HandlerFunc) http.HandlerFunc {
 func (s *Server) providers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"selected": s.cfg.Provider, "providers": []map[string]any{
 		{"id": "fake", "available": true, "speech": false, "inputSampleRate": 16000, "outputSampleRate": 24000},
-		{"id": "nova", "available": true, "speech": true, "inputSampleRate": 16000, "outputSampleRate": 24000, "requires": "local Nova bridge and AWS Bedrock authorization"},
+		{"id": "nova", "available": true, "speech": true, "inputSampleRate": 16000, "outputSampleRate": 24000, "requires": "LiteLLM Realtime and AWS Bedrock authorization"},
 	}})
 }
 

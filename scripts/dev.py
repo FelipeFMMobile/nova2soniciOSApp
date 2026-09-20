@@ -7,7 +7,6 @@ import getpass
 import json
 import os
 from pathlib import Path
-import shlex
 import shutil
 import signal
 import socket
@@ -15,6 +14,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,22 +63,19 @@ def servers(mode: int, fixtures: bool) -> list[dict]:
     return selected
 
 
-def environment(provider: str, profile: str, lan: bool, token: str, selected: list[dict], gateway_port: int = 8080, bridge_port: int = 8091) -> dict[str, str]:
+def environment(provider: str, profile: str, lan: bool, token: str, selected: list[dict], gateway_port: int = 8080) -> dict[str, str]:
     env = dict(os.environ)
     # Do not accidentally inherit a previous MCP demo, listen address or evidence capture.
     for key in list(env):
         if key.startswith("STS_") or key.startswith("NOVA_"):
             env.pop(key)
-    for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN"):
-        env.pop(key, None)  # The explicitly selected AWS profile is authoritative.
+    for key in list(env):
+        if key.startswith("AWS_"):
+            env.pop(key, None)  # AWS credentials belong only to the LiteLLM container.
     env.update(STS_PROVIDER=provider, STS_ENV="development",
                STS_GATEWAY_ADDRESS=f"0.0.0.0:{gateway_port}" if lan else f"127.0.0.1:{gateway_port}",
-               STS_DEVELOPMENT_TOKEN=token, STS_NOVA_BRIDGE_URL=f"ws://127.0.0.1:{bridge_port}",
-               STS_DATABASE_PATH=str(ROOT / "data/sts.sqlite"),
-               AWS_PROFILE=profile, AWS_REGION="us-east-1", AWS_DEFAULT_REGION="us-east-1",
-               NOVA_MODEL_ID="amazon.nova-2-sonic-v1:0", NOVA_VOICE_ID="carolina",
-               NOVA_BRIDGE_HOST="127.0.0.1", NOVA_BRIDGE_PORT=str(bridge_port),
-               PYTHONPATH=str(ROOT / "services/nova-bridge"))
+               STS_DEVELOPMENT_TOKEN=token, STS_LITELLM_URL=LITELLM_URL,
+               STS_LITELLM_REALTIME_MODEL="nova-sonic")
     env.setdefault("GOCACHE", "/private/tmp/sts-go-cache")
     return env
 
@@ -134,10 +131,11 @@ def wait_litellm_ready(timeout: float = 90) -> None:
     raise RuntimeError("LiteLLM não ficou saudável no prazo. Consulte: docker compose -f deploy/litellm/compose.yaml logs")
 
 
-def ensure_litellm(env: dict[str, str], fixtures: bool) -> dict[str, str]:
+def ensure_litellm(env: dict[str, str], fixtures: bool, profile: str) -> dict[str, str]:
     local = load_local_litellm_env()
     compose_env = dict(env)
     compose_env.update(local)
+    compose_env.update(AWS_PROFILE=profile, AWS_REGION="us-east-1")
     compose_env["STS_AGENDA_FIXTURES"] = "enabled" if fixtures else "disabled"
     active = running_litellm_services(compose_env)
     start = not active
@@ -160,6 +158,13 @@ def ensure_litellm(env: dict[str, str], fixtures: bool) -> dict[str, str]:
     return local
 
 
+def check_litellm_aws_identity(env: dict[str, str], profile: str) -> None:
+    code = ("import boto3,sys; "
+            "identity=boto3.Session(profile_name=sys.argv[1],region_name='us-east-1').client('sts').get_caller_identity(); "
+            "print('AWS account:', identity['Account'])")
+    checked(compose_command("exec", "-T", "litellm", "python", "-c", code, profile), env)
+
+
 def gateway_servers(selected: list[dict]) -> list[dict]:
     ids = {"memo": "sts-notes", "local": "sts-agenda"}
     return [{"alias": entry["alias"], "server_id": ids[entry["alias"]],
@@ -171,6 +176,9 @@ def ensure_litellm_service_key(master_key: str, service_key: str, selected: list
     configured = gateway_servers(selected)
     key_config = {
         "key": service_key,
+        "key_alias": "sts-go-gateway",
+        "models": ["nova-sonic"],
+        "allowed_routes": ["/v1/realtime", "mcp_routes"],
         "object_permission": {
             "mcp_servers": [server["server_id"] for server in configured],
             "mcp_tool_permissions": {server["server_id"]: server["allowed_tools"] for server in configured},
@@ -180,32 +188,49 @@ def ensure_litellm_service_key(master_key: str, service_key: str, selected: list
     headers = {"Authorization": "Bearer " + master_key, "Content-Type": "application/json"}
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-    def request(path: str) -> None:
-        operation = urllib.request.Request(LITELLM_URL + path, data=json.dumps(key_config).encode(),
+    def request(path: str, body: dict = key_config) -> None:
+        operation = urllib.request.Request(LITELLM_URL + path, data=json.dumps(body).encode(),
                                            method="POST", headers=headers)
         with opener.open(operation, timeout=15) as response:
             json.load(response)
 
+    lookup = urllib.request.Request(
+        LITELLM_URL + "/key/info?key=" + urllib.parse.quote(service_key, safe=""),
+        headers={"Authorization": "Bearer " + master_key},
+    )
     try:
-        request("/key/generate")
+        with opener.open(lookup, timeout=15) as response:
+            token_id = json.load(response).get("key")
     except urllib.error.HTTPError as error:
-        if error.code != 400:
-            raise RuntimeError("LiteLLM não configurou a chave de serviço local.") from error
+        if error.code not in (400, 404):
+            raise RuntimeError("LiteLLM não consultou a chave de serviço local.") from error
         try:
-            request("/key/update")
+            request("/key/generate")
+        except (OSError, ValueError) as create_error:
+            raise RuntimeError("LiteLLM não configurou a chave de serviço local.") from create_error
+    except (OSError, ValueError) as error:
+        raise RuntimeError("LiteLLM não consultou a chave de serviço local.") from error
+    else:
+        if not token_id:
+            raise RuntimeError("LiteLLM não localizou a chave de serviço local.")
+        update_config = dict(key_config)
+        update_config["key"] = token_id
+        # Preserve an existing alias. Local databases may already contain
+        # another key with the canonical alias; scope the configured raw key
+        # without deleting or silently taking over that credential.
+        update_config.pop("key_alias", None)
+        try:
+            request("/key/update", update_config)
         except (OSError, ValueError) as update_error:
             raise RuntimeError("LiteLLM não atualizou a chave de serviço local.") from update_error
-    except (OSError, ValueError) as error:
-        raise RuntimeError("LiteLLM não configurou a chave de serviço local.") from error
     return service_key
 
 
 def configure_litellm_backend(env: dict[str, str], selected: list[dict], local: dict[str, str]) -> None:
-    if not selected:
-        return
     env.update(
-        STS_MCP_BACKEND="litellm",
-        STS_LITELLM_MCP_URL=LITELLM_URL,
+        STS_MCP_BACKEND="litellm" if selected else "",
+        STS_LITELLM_URL=LITELLM_URL,
+        STS_LITELLM_REALTIME_MODEL="nova-sonic",
         STS_LITELLM_API_KEY=ensure_litellm_service_key(
             local["LITELLM_MASTER_KEY"], local["LITELLM_SERVICE_KEY"], selected),
         STS_MCP_CONTEXT_SECRET=local["STS_MCP_CONTEXT_SECRET"],
@@ -237,13 +262,6 @@ def process_identity(pid: int) -> tuple[str, str] | None:
     executable = query(["lsof", "-a", "-p", str(pid), "-d", "txt", "-Fn"])
     if f"n{ROOT / 'bin/gateway'}" in executable.splitlines():
         return "gateway", started
-    command = query(["ps", "-p", str(pid), "-o", "command="])
-    try:
-        argv = shlex.split(command)
-    except ValueError:
-        return None
-    if argv == [str(ROOT / "services/nova-bridge/.venv/bin/python"), "-m", "nova_bridge.server"]:
-        return "bridge", started
     return None
 
 
@@ -352,24 +370,18 @@ def wait_ready(children: list[subprocess.Popen], port: int) -> None:
 
 
 def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = False) -> None:
-    for executable in ("go", "make", "docker") + (("aws",) if nova else ()):
+    for executable in ("go", "make", "docker"):
         if not shutil.which(executable):
             raise RuntimeError(f"Ferramenta ausente: {executable}. Veja os pré-requisitos no README.")
     gateway_port = int(env["STS_GATEWAY_ADDRESS"].rsplit(":", 1)[1])
-    bridge_port = int(env["NOVA_BRIDGE_PORT"])
     ports = [(gateway_port, "0.0.0.0" if env["STS_GATEWAY_ADDRESS"].startswith("0.0.0.0") else "127.0.0.1")]
-    if nova:
-        ports.append((bridge_port, "127.0.0.1"))
     ensure_ports(ports)
+    profile = env.pop("_STS_AWS_PROFILE", "default")
+    local_litellm = ensure_litellm(env, fixtures, profile)
     if nova:
-        checked(["aws", "sts", "get-caller-identity", "--profile", env["AWS_PROFILE"], "--region", "us-east-1"], env)
-        interpreter = ROOT / "services/nova-bridge/.venv/bin/python"
-        if not interpreter.exists():
-            if not yes("A ponte Python não está instalada. Instalar com make nova-install?"):
-                raise RuntimeError("Instale a ponte com make nova-install e tente novamente.")
-            checked(["make", "nova-install"], env)
-        checked([str(interpreter), "-c", "import nova_bridge.server"], env)
-    local_litellm = ensure_litellm(env, fixtures)
+        compose_env = dict(env)
+        compose_env.update(load_local_litellm_env(), AWS_PROFILE=profile, AWS_REGION="us-east-1")
+        check_litellm_aws_identity(compose_env, profile)
     configure_litellm_backend(env, selected, local_litellm)
     print("\nCompilando gateway…", flush=True)
     (ROOT / "bin").mkdir(exist_ok=True)
@@ -381,15 +393,14 @@ def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = 
     children = []
     handles = []
     try:
-        for name, command in (([("bridge", [str(interpreter), "-m", "nova_bridge.server"])] if nova else []) +
-                              [("gateway", [str(ROOT / "bin/gateway")])]):
+        for name, command in [("gateway", [str(ROOT / "bin/gateway")])]:
             path = logs / f"{name}-{time.time_ns()}.log"
             handle = path.open("x")
             path.chmod(0o600)
             handles.append(handle)
             children.append(subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
                                              stdout=handle, stderr=handle, start_new_session=True))
-            wait_ready(children, bridge_port if name == "bridge" else gateway_port)
+            wait_ready(children, gateway_port)
             print(f"{name} pronto. Log: {path}", flush=True)
         print("\nAmbiente pronto. Configure o app:")
         host = "IP-DO-MAC" if env["STS_GATEWAY_ADDRESS"].startswith("0.0.0.0") else "127.0.0.1"
@@ -397,7 +408,7 @@ def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = 
         print(f"  Provider: {env['STS_PROVIDER']}")
         print(f"  Token local: {env['STS_DEVELOPMENT_TOKEN']}")
         print("Os MCPs selecionados são mediados pelo LiteLLM local." if selected else "Nenhum MCP selecionado.")
-        print("Ctrl+C encerra gateway/ponte; LiteLLM e bancos permanecem ativos.", flush=True)
+        print("Ctrl+C encerra o gateway; LiteLLM e bancos permanecem ativos.", flush=True)
         while True:
             if any(child.poll() is not None for child in children):
                 raise RuntimeError("Um serviço encerrou. O assistente vai parar os demais; consulte logs/dev/.")
@@ -412,10 +423,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Pergunta e valida escolhas sem autenticar, compilar ou iniciar serviços.")
     parser.add_argument("--gateway-port", type=int, default=8080, help="Porta local do gateway (padrão 8080).")
-    parser.add_argument("--bridge-port", type=int, default=8091, help="Porta privada da ponte (padrão 8091).")
     args = parser.parse_args()
-    if not (1 <= args.gateway_port <= 65535 and 1 <= args.bridge_port <= 65535) or args.gateway_port == args.bridge_port:
-        parser.error("Use portas distintas entre 1 e 65535.")
+    if not 1 <= args.gateway_port <= 65535:
+        parser.error("Use uma porta entre 1 e 65535.")
     print("Nova Voice · assistente de ambiente local")
     nova = choose("Qual ambiente deseja iniciar?", ["Fake — sem microfone/AWS/MCPs", "Nova 2 Sonic — AWS + MCPs opcionais"], 2) == 2
     profile = (input("Perfil AWS existente [default]: ").strip() or "default") if nova else "default"
@@ -425,7 +435,7 @@ def main() -> int:
     fixtures = yes("Semear Agenda com evento fictício em 16/05/2030, 10–11h?") if mode in (3, 4) else False
     lan = choose("Onde o app vai rodar?", ["Mac / iOS Simulator — somente loopback", "iPhone físico — gateway na rede local"], 1) == 2
     if lan:
-        print("Atenção: ws:// envia áudio/token sem TLS. Use somente Wi-Fi privado confiável; ponte permanece privada.")
+        print("Atenção: ws:// envia áudio/token sem TLS. Use somente Wi-Fi privado confiável; LiteLLM permanece em loopback.")
         if not yes("Autoriza expor o gateway na rede local?"):
             return 0
     prompt = "Token local [local] (Enter usa local; não é chave AWS): "
@@ -435,7 +445,8 @@ def main() -> int:
     if lan and token == "local":
         print("Atenção: o token padrão é previsível. Use outro token para acesso pela rede local.")
     selected = servers(mode, fixtures)
-    env = environment("nova" if nova else "fake", profile, lan, token, selected, args.gateway_port, args.bridge_port)
+    env = environment("nova" if nova else "fake", profile, lan, token, selected, args.gateway_port)
+    env["_STS_AWS_PROFILE"] = profile
     print(f"\nResumo: provider={env['STS_PROVIDER']}, região=us-east-1, gateway={env['STS_GATEWAY_ADDRESS']}")
     print(f"MCPs: {', '.join(entry['alias'] for entry in selected) or 'nenhum'}; fixtures={'sim' if fixtures else 'não'}")
     print(f"Bancos persistentes: {ROOT / 'data'}; nenhum dado existente será apagado.")

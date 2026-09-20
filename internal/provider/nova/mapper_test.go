@@ -72,12 +72,12 @@ func TestHistoryContainsOnlyFinalSpeech(t *testing.T) {
 }
 
 func TestInterruptedSignalAndInvalidPCM(t *testing.T) {
-	e, err := decode("textOutput", []byte(`{"contentId":"c","content":"{\"interrupted\":true}"}`))
-	if err != nil || e.Kind != "interrupted" {
-		t.Fatal(e, err)
-	}
 	m := NewMapper(nil)
 	m.StartInput("a")
+	if e := mapped(t, m, Event{Kind: "interrupted"}); len(e) != 2 || e[0].Type != protocol.TurnInterrupted {
+		t.Fatal(e)
+	}
+	m.StartInput("b")
 	user(t, m, "u", "oi")
 	audioStart(t, m, "a")
 	if _, err := m.Map(Event{Kind: "audioOutput", ContentID: "a", Audio: "AAAA"}); err == nil {

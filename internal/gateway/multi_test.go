@@ -52,7 +52,8 @@ func bridgeResult(t *testing.T, c *websocket.Conn) mcp.Result {
 		t.Error("missing correlated tool result")
 		return mcp.Failure("missing")
 	}
-	data, _ := value["content"].(string)
+	item, _ := value["item"].(map[string]any)
+	data, _ := item["output"].(string)
 	var r mcp.Result
 	if json.Unmarshal([]byte(data), &r) != nil {
 		t.Error("bad result", value)
@@ -81,14 +82,15 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 				t.Fatal(err)
 			}
 			url := bridge(t, func(c *websocket.Conn, start map[string]any) {
-				tools, ok := start["tools"].([]any)
+				session, _ := start["session"].(map[string]any)
+				tools, ok := session["tools"].([]any)
 				if !ok || len(tools) != 7 {
 					t.Error("union missing")
 					return
 				}
 				for _, tool := range tools {
-					spec := tool.(map[string]any)["toolSpec"].(map[string]any)
-					if _, ok := spec["inputSchema"].(map[string]any)["json"].(string); !ok {
+					spec, _ := tool.(map[string]any)["function"].(map[string]any)
+					if spec["name"] == "" || spec["parameters"] == nil {
 						t.Error("wire schema")
 					}
 				}
@@ -228,9 +230,8 @@ func TestTwoRealMCPsMockNovaScenarios(t *testing.T) {
 			})
 			cfg := testConfig()
 			cfg.Provider = "nova"
-			cfg.NovaBridgeURL = url
+			cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 			cfg.MCPServers = servers
-			cfg.DatabasePath = filepath.Join(t.TempDir(), "audit.sqlite")
 			cfg.MCPEvidencePath = filepath.Join(t.TempDir(), "private.jsonl")
 			if dir := os.Getenv("STS_TEST_EVIDENCE_DIR"); dir != "" {
 				cfg.MCPEvidencePath = filepath.Join(dir, scenario+".jsonl")
@@ -324,7 +325,8 @@ func TestMultiNovaRenewalKeepsRouting(t *testing.T) {
 	advertised := make(chan int, 4)
 	url := bridge(t, func(c *websocket.Conn, start map[string]any) {
 		n := connections.Add(1)
-		tools, _ := start["tools"].([]any)
+		session, _ := start["session"].(map[string]any)
+		tools, _ := session["tools"].([]any)
 		advertised <- len(tools)
 		var input map[string]any
 		if c.ReadJSON(&input) != nil {
@@ -347,7 +349,7 @@ func TestMultiNovaRenewalKeepsRouting(t *testing.T) {
 	})
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	cfg.NovaBridgeURL = url
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 	cfg.MCPServers = servers
 	cfg.NovaMaxSessionAge = 300 * time.Millisecond
 	_, _, ws := setup(t, cfg)
@@ -407,7 +409,7 @@ func TestMultiMCPAudioAndTimeoutIsolation(t *testing.T) {
 				nativeTool(c, "slow", "local_agenda_list_events", rangeArgs)
 				if !timeout {
 					for c.ReadJSON(&input) == nil {
-						if input["type"] == "audio.append" {
+						if input["type"] == "input_audio_buffer.append" {
 							forwarded <- struct{}{}
 							break
 						}
@@ -427,7 +429,7 @@ func TestMultiMCPAudioAndTimeoutIsolation(t *testing.T) {
 			})
 			cfg := testConfig()
 			cfg.Provider = "nova"
-			cfg.NovaBridgeURL = url
+			cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 			cfg.MCPServers = servers
 			cfg.MCPTimeout = time.Second
 			if timeout {
@@ -477,7 +479,7 @@ func TestAgendaGatewayDurableRetryAcrossSessions(t *testing.T) {
 	})
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	cfg.NovaBridgeURL = url
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
 	cfg.MCPServers = servers
 	_, _, ws := setup(t, cfg)
 	for i := 0; i < 2; i++ {

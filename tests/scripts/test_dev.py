@@ -70,14 +70,15 @@ class DevTests(unittest.TestCase):
 
     def test_environment_is_explicit_and_does_not_inherit_evidence_or_credentials(self):
         with patch.dict(os.environ, {"STS_MCP_COMMAND": "bad", "STS_MCP_EVIDENCE_PATH": "bad",
-                                     "NOVA_BRIDGE_HOST": "0.0.0.0", "AWS_ACCESS_KEY_ID": "not-a-real-key"}):
+                                     "AWS_ACCESS_KEY_ID": "not-a-real-key"}):
             env = dev.environment("nova", "TerraformUser", True, "test-token", dev.servers(4, False))
         self.assertNotIn("AWS_ACCESS_KEY_ID", env)
         self.assertNotIn("STS_MCP_COMMAND", env)
         self.assertNotIn("STS_MCP_EVIDENCE_PATH", env)
-        self.assertEqual(env["AWS_PROFILE"], "TerraformUser")
         self.assertEqual(env["STS_GATEWAY_ADDRESS"], "0.0.0.0:8080")
-        self.assertEqual(env["NOVA_BRIDGE_HOST"], "127.0.0.1")
+        self.assertNotIn("AWS_PROFILE", env)
+        self.assertEqual(env["STS_LITELLM_URL"], "http://127.0.0.1:4000")
+        self.assertEqual(env["STS_LITELLM_REALTIME_MODEL"], "nova-sonic")
         self.assertNotIn("STS_MCP_SERVERS", env)
 
     def test_litellm_backend_uses_selected_servers_and_service_key(self):
@@ -101,7 +102,7 @@ class DevTests(unittest.TestCase):
              patch.object(dev, "yes", return_value=False), \
              patch.object(dev, "wait_litellm_ready") as ready, \
              patch.object(dev, "checked") as checked:
-            self.assertEqual(dev.ensure_litellm({}, False), local)
+            self.assertEqual(dev.ensure_litellm({}, False, "default"), local)
         ready.assert_called_once()
         checked.assert_not_called()
 
@@ -111,7 +112,7 @@ class DevTests(unittest.TestCase):
         with patch.object(dev, "load_local_litellm_env", return_value=local), \
              patch.object(dev, "running_litellm_services", return_value=set()), \
              patch.object(dev, "wait_litellm_ready"), patch.object(dev, "checked") as checked:
-            dev.ensure_litellm({}, False)
+            dev.ensure_litellm({}, False, "default")
         self.assertIn("up", checked.call_args.args[0])
 
     def test_partial_litellm_requires_restart(self):
@@ -121,7 +122,7 @@ class DevTests(unittest.TestCase):
              patch.object(dev, "running_litellm_services", return_value={"postgres"}), \
              patch.object(dev, "yes", return_value=False), patch.object(dev, "checked") as checked:
             with self.assertRaises(RuntimeError):
-                dev.ensure_litellm({}, False)
+                dev.ensure_litellm({}, False, "default")
         checked.assert_not_called()
 
     def test_occupied_port_is_rejected_without_stopping_listener(self):
@@ -154,7 +155,7 @@ class DevTests(unittest.TestCase):
              patch.object(sys, "argv", ["dev.py"]), \
              patch.object(dev, "run") as launch:
             self.assertEqual(dev.main(), 0)
-        self.assertEqual(launch.call_args.args[0]["AWS_PROFILE"], "default")
+        self.assertEqual(launch.call_args.args[0]["_STS_AWS_PROFILE"], "default")
 
     def test_enter_selects_local_token(self):
         with patch("builtins.input", side_effect=["1", "1", "", "s"]), \

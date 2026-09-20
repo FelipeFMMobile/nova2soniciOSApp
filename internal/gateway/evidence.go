@@ -10,7 +10,7 @@ import (
 	"stsmodel.local/poc/internal/orchestrator"
 )
 
-// Opt-in private evidence is distinct from normal metadata-only audit/logs.
+// Opt-in private evidence is distinct from normal ephemeral structured logs.
 func openEvidence(path string) (*os.File, error) {
 	if path == "" {
 		return nil, nil

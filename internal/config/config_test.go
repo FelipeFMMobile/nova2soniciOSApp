@@ -27,17 +27,38 @@ func TestRejectsUnsupportedProvider(t *testing.T) {
 	}
 }
 
-func TestNovaUsesLocalBridgeByDefault(t *testing.T) {
+func TestNovaRequiresLiteLLM(t *testing.T) {
 	t.Setenv("STS_ENV", "development")
 	t.Setenv("STS_PROVIDER", "nova")
-	t.Setenv("STS_NOVA_BRIDGE_URL", "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+	t.Setenv("STS_LITELLM_URL", "")
+	t.Setenv("STS_LITELLM_API_KEY", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Nova without LiteLLM configuration was accepted")
 	}
-	if cfg.NovaBridgeURL != "ws://127.0.0.1:8091" {
-		t.Fatalf("NovaBridgeURL = %q", cfg.NovaBridgeURL)
+	t.Setenv("STS_LITELLM_URL", "http://127.0.0.1:4000")
+	t.Setenv("STS_LITELLM_API_KEY", "service-key")
+	cfg, err := Load()
+	if err != nil || cfg.LiteLLMModel != "nova-sonic" {
+		t.Fatal(cfg, err)
+	}
+}
+
+func TestNovaRejectsInvalidLiteLLMFields(t *testing.T) {
+	for _, tc := range []struct{ name, url, key, model string }{
+		{"missing URL", "", "key", "nova-sonic"},
+		{"invalid URL", "file:///tmp/litellm", "key", "nova-sonic"},
+		{"missing key", "http://127.0.0.1:4000", "", "nova-sonic"},
+		{"blank model", "http://127.0.0.1:4000", "key", " "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("STS_PROVIDER", "nova")
+			t.Setenv("STS_LITELLM_URL", tc.url)
+			t.Setenv("STS_LITELLM_API_KEY", tc.key)
+			t.Setenv("STS_LITELLM_REALTIME_MODEL", tc.model)
+			if _, err := Load(); err == nil {
+				t.Fatal("invalid LiteLLM configuration accepted")
+			}
+		})
 	}
 }
 
@@ -111,7 +132,7 @@ func TestExplicitMultipleServers(t *testing.T) {
 
 func TestLiteLLMGatewayConfiguration(t *testing.T) {
 	t.Setenv("STS_MCP_BACKEND", "litellm")
-	t.Setenv("STS_LITELLM_MCP_URL", "http://127.0.0.1:4000")
+	t.Setenv("STS_LITELLM_URL", "http://127.0.0.1:4000")
 	t.Setenv("STS_LITELLM_API_KEY", "service-key")
 	t.Setenv("STS_MCP_CONTEXT_SECRET", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
 	t.Setenv("STS_LITELLM_MCP_SERVERS", `[{"alias":"memo","server_id":"notes","allowed_tools":["notes.list"],"policies":{"notes.list":"read_only"}}]`)

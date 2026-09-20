@@ -18,6 +18,8 @@ def main():
     args = parser.parse_args()
     body = json.dumps({
         "key_alias": "sts-go-gateway",
+        "models": ["nova-sonic"],
+        "allowed_routes": ["/v1/realtime", "mcp_routes"],
         "object_permission": {"mcp_servers": SERVERS, "mcp_tool_permissions": TOOLS},
         "mcp_rpm_limit": {"memo": 60, "local": 60},
     }).encode()
@@ -27,7 +29,8 @@ def main():
     key = value.get("key")
     if not key: parser.exit(1, "LiteLLM did not return a service key\n")
     print("export STS_MCP_BACKEND=litellm")
-    print("export STS_LITELLM_MCP_URL=" + shlex.quote(args.url.rstrip("/")))
+    print("export STS_LITELLM_URL=" + shlex.quote(args.url.rstrip("/")))
+    print("export STS_LITELLM_REALTIME_MODEL=nova-sonic")
     print("export STS_LITELLM_API_KEY=" + shlex.quote(key))
     servers = json.dumps([
         {"alias":"memo", "server_id":"sts-notes", "allowed_tools":TOOLS["sts-notes"], "policies":{"notes.create":"explicit_intent", "notes.list":"read_only", "notes.delete":"confirm_later"}},

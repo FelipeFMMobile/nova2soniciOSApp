@@ -101,9 +101,7 @@ func TestCollisionNamesAndWireUnion(t *testing.T) {
 		t.Fatal("union")
 	}
 	for _, v := range s.Specs {
-		spec := v["toolSpec"].(map[string]any)
-		wire, ok := spec["inputSchema"].(map[string]any)["json"].(string)
-		if !ok || !json.Valid([]byte(wire)) {
+		if v.Name == "" || !json.Valid(v.Parameters) {
 			t.Fatal("wire")
 		}
 	}

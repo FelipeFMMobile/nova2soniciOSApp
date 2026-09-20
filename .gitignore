@@ -15,7 +15,6 @@ xcuserdata/
 .env
 .env.*
 !.env.example
-!/deploy/litellm/.env
 *.sqlite
 *.sqlite-*
 *.sqlite3
