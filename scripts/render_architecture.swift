@@ -18,6 +18,8 @@ let awsFill = NSColor(calibratedRed: 1.0, green: 0.95, blue: 0.86, alpha: 1)
 let white = NSColor.white
 let dbFill = NSColor(calibratedRed: 0.89, green: 0.92, blue: 0.97, alpha: 1)
 let purple = NSColor(calibratedRed: 0.36, green: 0.27, blue: 0.63, alpha: 1)
+let futureFill = NSColor(calibratedRed: 0.95, green: 0.96, blue: 0.97, alpha: 1)
+let futureLine = NSColor(calibratedRed: 0.48, green: 0.52, blue: 0.58, alpha: 1)
 
 func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> NSRect {
     NSRect(x: x, y: CGFloat(height) - y - h, width: w, height: h)
@@ -75,7 +77,8 @@ func arrowHead(from a: NSPoint, to b: NSPoint, color: NSColor = line) {
     head.fill()
 }
 
-func arrow(_ coords: [(CGFloat, CGFloat)], both: Bool = false, color: NSColor = line, width: CGFloat = 3) {
+func arrow(_ coords: [(CGFloat, CGFloat)], both: Bool = false, color: NSColor = line,
+           width: CGFloat = 3, dashed: Bool = false) {
     guard coords.count >= 2 else { return }
     let points = coords.map { point($0.0, $0.1) }
     let path = NSBezierPath()
@@ -84,6 +87,7 @@ func arrow(_ coords: [(CGFloat, CGFloat)], both: Bool = false, color: NSColor = 
     color.setStroke()
     path.lineWidth = width
     path.lineJoinStyle = .round
+    if dashed { path.setLineDash([10, 7], count: 2, phase: 0) }
     path.stroke()
     arrowHead(from: points[points.count - 2], to: points.last!, color: color)
     if both { arrowHead(from: points[1], to: points[0], color: color) }
@@ -108,97 +112,106 @@ canvas.setFill()
 NSBezierPath(rect: NSRect(x: 0, y: 0, width: width, height: height)).fill()
 
 // Header and external systems.
-text("Nova Voice — arquitetura da POC com LiteLLM", x: 80, y: 44, w: 1000, h: 52,
+text("STS Model — arquitetura modular orientada a domínios", x: 80, y: 44, w: 1250, h: 52,
      size: 38, weight: .bold, align: .left)
-text("Gateway e orquestração em Go · LiteLLM Realtime · custos no Usage/Spend",
-     x: 80, y: 102, w: 1250, h: 34, size: 22, align: .left)
+text("Aplicações independentes · contratos junto dos provedores · integrações no gateway",
+     x: 80, y: 102, w: 1500, h: 34, size: 22, align: .left)
 
-box(235, 165, 620, 120, title: "App SwiftUI · macOS / iOS",
-    lines: ["Microfone, reprodução e interface"], titleSize: 25, bodySize: 19)
-box(1080, 145, 630, 145, title: "AWS · AMAZON BEDROCK",
-    lines: ["Nova 2 Sonic"], fill: awsFill, stroke: NSColor(calibratedRed: 0.86, green: 0.57, blue: 0.18, alpha: 1),
+box(185, 160, 700, 120, title: "Clientes de voz · SwiftUI e CLI Go",
+    lines: ["Microfone, reprodução e protocolo /v1/voice"], titleSize: 25, bodySize: 19)
+box(1110, 145, 600, 140, title: "AWS · AMAZON BEDROCK",
+    lines: ["Nova 2 Sonic"], fill: awsFill,
+    stroke: NSColor(calibratedRed: 0.86, green: 0.57, blue: 0.18, alpha: 1),
     titleSize: 22, bodySize: 28)
 
-// Local Mac boundary.
-rounded(rect(45, 320, 1710, 1230), fill: localFill, stroke: border, radius: 28, width: 2)
-text("AMBIENTE LOCAL NO MAC", x: 75, y: 345, w: 500, h: 36, size: 23, weight: .bold, align: .left)
+// Local monorepo boundary.
+rounded(rect(45, 315, 1710, 1235), fill: localFill, stroke: border, radius: 28, width: 2)
+text("AMBIENTE LOCAL · MONOREPO POLIGLOTA", x: 75, y: 338, w: 600, h: 36,
+     size: 23, weight: .bold, align: .left)
 
-// Go process.
-rounded(rect(75, 395, 900, 455), fill: gatewayFill,
+// Voice gateway: a modular monolith with trusted integration configuration.
+rounded(rect(75, 390, 920, 490), fill: gatewayFill,
         stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 22, width: 2)
-text("PROCESSO GATEWAY · GO · PORTA 8080", x: 100, y: 420, w: 650, h: 34,
+text("APP VOICE-GATEWAY · MONÓLITO MODULAR · GO · :8080", x: 100, y: 413, w: 790, h: 34,
      size: 22, weight: .bold, align: .left)
-box(110, 475, 380, 130, title: "API HTTP / WebSocket",
-    lines: ["Token local · WS /v1/voice", "/healthz · /v1/providers · /v1/metrics"], titleSize: 23, bodySize: 17)
-box(555, 475, 380, 130, title: "Controle da conversa",
+box(110, 470, 385, 125, title: "API de voz",
+    lines: ["HTTP / WebSocket · token local", "contracts/voice/v1"], titleSize: 23, bodySize: 17)
+box(555, 470, 400, 125, title: "Módulo Conversation",
     lines: ["Sessões, turnos e timeouts", "Streaming e interrupção"], titleSize: 23, bodySize: 18)
-box(110, 660, 380, 145, title: "Orquestrador de ferramentas",
-    lines: ["Schemas e políticas do host", "Confirmações e idempotência"], titleSize: 22, bodySize: 18)
-box(555, 660, 380, 145, title: "Adaptador Nova",
-    lines: ["Áudio, transcrições e toolUse", "Mapeamento de eventos"], titleSize: 23, bodySize: 18)
+box(110, 645, 385, 155, title: "Módulo Actions",
+    lines: ["Autorização e confirmação", "Resultado desconhecido · retry seguro"], titleSize: 23, bodySize: 17)
+box(555, 645, 400, 155, title: "Portas e adaptadores",
+    lines: ["Realtime / LiteLLM · MCP", "Envelope assinado do host"], titleSize: 23, bodySize: 18)
+rounded(rect(110, 820, 845, 40), fill: white,
+        stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 9, width: 1.5)
+text("config/integrations · aliases · tools permitidas · políticas · frases de confirmação",
+     x: 125, y: 828, w: 815, h: 24, size: 16, weight: .medium)
 
-// LiteLLM owns the cloud boundary and cost metadata.
-box(1080, 475, 630, 165, title: "LiteLLM Realtime · porta 4000",
-    lines: ["Chave virtual sts-go-gateway", "Perfil AWS somente leitura", "WebSocket → Bedrock / Nova"],
-    titleSize: 23, bodySize: 18)
-box(1080, 710, 630, 130, title: "PostgreSQL · Usage / Spend",
-    lines: ["Modelo, chave, sessão e custo · sem conteúdo"], fill: dbFill, titleSize: 23, bodySize: 18)
-
-// Docker / LiteLLM boundary.
-rounded(rect(75, 900, 1635, 580), fill: dockerFill,
+// LiteLLM owns cloud credentials and platform metadata; it is not a business domain.
+rounded(rect(1050, 390, 660, 490), fill: dockerFill,
         stroke: NSColor(calibratedRed: 0.56, green: 0.48, blue: 0.76, alpha: 1), radius: 22, width: 2)
-text("DOCKER LOCAL · LITELLM, POSTGRESQL E MCP", x: 100, y: 925, w: 720, h: 34,
+text("PLATAFORMA LOCAL · LITELLM · :4000", x: 1075, y: 413, w: 570, h: 34,
      size: 22, weight: .bold, color: purple, align: .left)
-box(110, 975, 500, 165, title: "LiteLLM MCP Gateway · porta 4000",
-    lines: ["REST MCP · autenticação por service key", "Grants por servidor/tool · 60 RPM", "Encaminha envelope assinado nos arguments"],
-    fill: white, stroke: purple, titleSize: 22, bodySize: 17)
-box(665, 975, 390, 165, title: "Chave virtual",
-    lines: ["Modelo nova-sonic", "/v1/realtime + MCPs autorizados"],
-    fill: dbFill, stroke: purple, titleSize: 22, bodySize: 16)
-box(1110, 975, 555, 165, title: "Painel administrativo local",
-    lines: ["http://127.0.0.1:4000/ui", "Saúde · MCPs · chaves · permissões"],
-    fill: white, stroke: purple, titleSize: 22, bodySize: 18)
+box(1080, 470, 600, 170, title: "Realtime + MCP Gateway",
+    lines: ["Chave virtual e grants por servidor/tool", "WebSocket → Bedrock · MCP → aplicações", "Perfil AWS somente leitura"],
+    fill: white, stroke: purple, titleSize: 23, bodySize: 18)
+box(1080, 700, 285, 120, title: "PostgreSQL",
+    lines: ["Chaves + Usage/Spend", "sem conteúdo"], fill: dbFill, titleSize: 22, bodySize: 16)
+box(1395, 700, 285, 120, title: "Painel local",
+    lines: ["/ui · saúde · MCPs", "chaves · permissões"], fill: white, titleSize: 22, bodySize: 16)
 
-box(110, 1210, 360, 115, title: "MCP Notes · Go",
-    lines: ["create · list · delete"], titleSize: 22, bodySize: 18)
-box(555, 1210, 400, 115, title: "MCP Agenda · Go",
-    lines: ["create_event · cancel_event", "list_events · list_slots"], titleSize: 22, bodySize: 17)
-box(110, 1370, 360, 85, title: "SQLite Notes",
-    lines: ["Notas + ledger idempotente"], fill: dbFill, titleSize: 21, bodySize: 16)
-box(555, 1370, 400, 85, title: "SQLite Agenda",
-    lines: ["Eventos + ledger idempotente"], fill: dbFill, titleSize: 21, bodySize: 16)
+// Independent MCP applications. Each application owns its contract, rules and data.
+rounded(rect(75, 920, 1635, 550), fill: dockerFill,
+        stroke: NSColor(calibratedRed: 0.56, green: 0.48, blue: 0.76, alpha: 1), radius: 22, width: 2)
+text("APLICAÇÕES MCP INDEPENDENTES · CONTRATOS E DADOS PRÓPRIOS",
+     x: 100, y: 940, w: 1000, h: 34, size: 22, weight: .bold, color: purple, align: .left)
 
-// Data paths.
-arrow([(545, 285), (545, 305), (60, 305), (60, 540), (110, 540)], both: true)
-pill("PCM16 + eventos JSON", x: 315, y: 292, w: 215)
-arrow([(490, 540), (555, 540)], both: true)
-arrow([(745, 605), (745, 660)], both: true)
-arrow([(620, 605), (620, 632), (300, 632), (300, 660)], both: true)
-pill("toolUse / resultado", x: 360, y: 613, w: 190)
-arrow([(935, 735), (1015, 735), (1015, 558), (1080, 558)], both: true)
-pill("Realtime + service key", x: 895, y: 648, w: 190)
-arrow([(1395, 475), (1395, 290)], both: true)
-pill("Stream AWS autenticado", x: 1280, y: 360, w: 230)
-arrow([(1395, 640), (1395, 710)])
-pill("spend metadata", x: 1270, y: 660, w: 160)
+box(110, 1030, 440, 205, title: "NotesContext · mcp-notes · Go",
+    lines: ["contracts/v1 · schemas e erros", "regras de notas · adaptador MCP", "adaptador SQLite · ledger próprio"],
+    fill: white, stroke: purple, titleSize: 21, bodySize: 17)
+box(680, 1030, 440, 205, title: "SchedulingContext · mcp-agenda · Go",
+    lines: ["contracts/v1 · schemas e erros", "regras de agenda · adaptador MCP", "adaptador SQLite · ledger próprio"],
+    fill: white, stroke: purple, titleSize: 20, bodySize: 17)
+box(1250, 1030, 420, 205, title: "Novo domínio · MCP Spring",
+    lines: ["FUTURO · domínio a definir", "contrato e regras próprios", "cadastro por perfil de integração"],
+    fill: futureFill, stroke: futureLine, titleSize: 21, bodySize: 17)
 
-// Governed MCP path.
-arrow([(300, 805), (300, 875), (360, 875), (360, 975)], both: true, color: purple)
-pill("MCP REST · service key · envelope HMAC", x: 300, y: 850, w: 355, color: purple)
-arrow([(610, 1058), (665, 1058)], both: true, color: purple)
-arrow([(1110, 1025), (1080, 1025), (1080, 950), (360, 950), (360, 975)], both: true, color: purple)
-pill("API administrativa · localhost /ui", x: 720, y: 925, w: 295, color: purple)
-arrow([(260, 1140), (260, 1210)], both: true, color: purple)
-arrow([(470, 1110), (755, 1110), (755, 1210)], both: true, color: purple)
-pill("JSON-RPC · stdio", x: 480, y: 1145, w: 175, color: purple)
-arrow([(290, 1325), (290, 1370)], both: true)
-arrow([(755, 1325), (755, 1370)], both: true)
+box(140, 1290, 380, 105, title: "SQLite Notes",
+    lines: ["Notas + notes_operations"], fill: dbFill, titleSize: 21, bodySize: 16)
+box(710, 1290, 380, 105, title: "SQLite Agenda",
+    lines: ["Eventos + agenda_operations"], fill: dbFill, titleSize: 21, bodySize: 16)
+box(1280, 1290, 360, 105, title: "Persistência própria",
+    lines: ["definida pelo novo domínio"], fill: futureFill, stroke: futureLine, titleSize: 20, bodySize: 16)
+
+// Voice and inference paths.
+arrow([(535, 280), (535, 305), (60, 305), (60, 532), (110, 532)], both: true)
+pill("PCM16 + eventos JSON", x: 310, y: 292, w: 220)
+arrow([(495, 532), (555, 532)], both: true)
+arrow([(755, 595), (755, 645)], both: true)
+arrow([(625, 595), (625, 620), (300, 620), (300, 645)], both: true)
+pill("toolUse / resultado", x: 360, y: 603, w: 190)
+arrow([(955, 715), (1018, 715), (1018, 555), (1080, 555)], both: true)
+pill("Realtime + MCP governado", x: 890, y: 654, w: 225)
+arrow([(1395, 470), (1395, 285)], both: true)
+pill("stream AWS autenticado", x: 1280, y: 345, w: 230)
+arrow([(1220, 640), (1220, 700)])
+pill("spend metadata", x: 1138, y: 660, w: 165)
+
+// MCP paths. Current apps use stdio; the Spring app is an explicit future extension.
+arrow([(1080, 585), (1020, 585), (1020, 990), (330, 990), (330, 1030)], both: true, color: purple)
+arrow([(1020, 990), (900, 990), (900, 1030)], both: true, color: purple)
+pill("JSON-RPC stdio · contrato da aplicação", x: 455, y: 974, w: 335, color: purple)
+arrow([(1020, 990), (1460, 990), (1460, 1030)], both: true, color: futureLine, dashed: true)
+pill("transporte futuro", x: 1260, y: 974, w: 170, color: futureLine)
+arrow([(330, 1235), (330, 1290)], both: true)
+arrow([(900, 1235), (900, 1290)], both: true)
+arrow([(1460, 1235), (1460, 1290)], both: true, color: futureLine, dashed: true)
 
 // Footer.
-text("A Nova escolhe as tools; o Go valida intenção, confirmação, schema e identidade da operação.",
-     x: 80, y: 1572, w: 1640, h: 28, size: 20, weight: .semibold, align: .left)
-text("Somente o LiteLLM possui credenciais AWS e registra Usage/Spend sem conteúdo da conversa.",
-     x: 80, y: 1607, w: 1640, h: 28, size: 18, align: .left)
+text("Cada aplicação possui seus contratos, regras e dados; o gateway possui os contratos de voz e os perfis de consumo.",
+     x: 80, y: 1570, w: 1640, h: 28, size: 20, weight: .semibold, align: .left)
+text("LiteLLM é plataforma: concentra credenciais AWS, grants e Usage/Spend sem conteúdo da conversa.",
+     x: 80, y: 1605, w: 1640, h: 28, size: 18, align: .left)
 
 context.flushGraphics()
 NSGraphicsContext.restoreGraphicsState()

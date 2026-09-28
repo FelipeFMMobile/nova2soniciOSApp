@@ -1,0 +1,13 @@
+go 1.27.0
+
+use (
+	.
+	./apps/voice-gateway
+	./apps/voice-client
+	./apps/mcp-notes
+	./apps/mcp-agenda
+	./packages/go/mcpwire
+	./packages/go/voicewire
+	./packages/go/audio
+	./packages/go/testkit
+)

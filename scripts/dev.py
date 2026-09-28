@@ -47,24 +47,52 @@ def yes(question: str, default: bool = False) -> bool:
         print("Responda s ou n.")
 
 
-def servers(mode: int, fixtures: bool) -> list[dict]:
-    # Preserve the aliases/policies used by the existing multi-MCP runbook.
-    entries = json.loads((ROOT / "docs/mcp-servers.example.json").read_text())
+def integration_directories() -> list[Path]:
+    directories = [ROOT / "apps/voice-gateway/config/integrations"]
+    external = os.environ.get("STS_INTEGRATIONS_DIR")
+    if external:
+        directories.append(Path(external))
+    return directories
+
+
+def integration_catalog() -> list[dict]:
+    catalog = []
+    names = set()
+    for directory in integration_directories():
+        for path in sorted(directory.glob("*/runtime.json")):
+            entry = json.loads(path.read_text())
+            profiles = json.loads((path.parent / "profile.json").read_text())["tools"]
+            name = entry.get("name")
+            if not name or name in names:
+                raise RuntimeError(f"Integração duplicada ou sem nome: {path}.")
+            names.add(name)
+            entry["allowed_tools"] = list(profiles)
+            entry["policies"] = {tool: value["policy"] for tool, value in profiles.items()}
+            catalog.append(entry)
+    # Keep the legacy menu order; additional applications are discovered below.
+    return sorted(catalog, key=lambda entry: ({"notes": 0, "agenda": 1}.get(entry["name"], 2), entry["name"]))
+
+
+def servers(mode: int, fixtures: bool, names: list[str] | None = None) -> list[dict]:
+    selected_names = names if names is not None else {1: [], 2: ["notes"], 3: ["agenda"]}.get(mode)
     selected = []
-    for entry in entries:
-        kind = "notes" if entry["alias"] == "memo" else "agenda"
-        if mode == 1 or (mode == 2 and kind != "notes") or (mode == 3 and kind != "agenda"):
+    for entry in integration_catalog():
+        if selected_names is not None and entry["name"] not in selected_names:
             continue
-        entry["command"] = str(ROOT / f"bin/mcp-{kind}")
-        entry["args"] = ["-db", str(ROOT / "data" / ("sts.sqlite" if kind == "notes" else "agenda.sqlite"))]
-        if kind == "agenda" and fixtures:
-            entry["args"].append("-fixtures")
+        entry["command"] = str(ROOT / entry["command"])
+        entry["cwd"] = str(ROOT / entry["cwd"])
+        entry["args"] = [arg.replace("{root}", str(ROOT)) for arg in entry["args"]]
+        if fixtures:
+            entry["args"].extend(entry["fixture_args"])
         selected.append(entry)
+    if selected_names is not None and set(selected_names) != {entry["name"] for entry in selected}:
+        raise RuntimeError("MCP solicitado não existe no catálogo de integrações.")
     return selected
 
 
 def environment(provider: str, profile: str, lan: bool, token: str, selected: list[dict], gateway_port: int = 8080) -> dict[str, str]:
     env = dict(os.environ)
+    integrations_dir = env.get("STS_INTEGRATIONS_DIR")
     # Do not accidentally inherit a previous MCP demo, listen address or evidence capture.
     for key in list(env):
         if key.startswith("STS_") or key.startswith("NOVA_"):
@@ -76,6 +104,8 @@ def environment(provider: str, profile: str, lan: bool, token: str, selected: li
                STS_GATEWAY_ADDRESS=f"0.0.0.0:{gateway_port}" if lan else f"127.0.0.1:{gateway_port}",
                STS_DEVELOPMENT_TOKEN=token, STS_LITELLM_URL=LITELLM_URL,
                STS_LITELLM_REALTIME_MODEL="nova-sonic")
+    if integrations_dir:
+        env["STS_INTEGRATIONS_DIR"] = integrations_dir
     env.setdefault("GOCACHE", "/private/tmp/sts-go-cache")
     return env
 
@@ -166,8 +196,7 @@ def check_litellm_aws_identity(env: dict[str, str], profile: str) -> None:
 
 
 def gateway_servers(selected: list[dict]) -> list[dict]:
-    ids = {"memo": "sts-notes", "local": "sts-agenda"}
-    return [{"alias": entry["alias"], "server_id": ids[entry["alias"]],
+    return [{"alias": entry["alias"], "server_id": entry["server_id"],
              "allowed_tools": entry["allowed_tools"], "policies": entry["policies"]}
             for entry in selected]
 
@@ -385,7 +414,7 @@ def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = 
     configure_litellm_backend(env, selected, local_litellm)
     print("\nCompilando gateway…", flush=True)
     (ROOT / "bin").mkdir(exist_ok=True)
-    checked(["go", "build", "-o", str(ROOT / "bin/gateway"), "./cmd/gateway"], env)
+    checked(["go", "build", "-o", str(ROOT / "bin/gateway"), "./apps/voice-gateway/cmd/gateway"], env)
     (ROOT / "data").mkdir(exist_ok=True)
     logs = ROOT / "logs/dev"
     logs.mkdir(parents=True, exist_ok=True)
@@ -423,6 +452,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Pergunta e valida escolhas sem autenticar, compilar ou iniciar serviços.")
     parser.add_argument("--gateway-port", type=int, default=8080, help="Porta local do gateway (padrão 8080).")
+    parser.add_argument("--mcps", help="Nomes do catálogo separados por vírgula; substitui a seleção interativa de MCPs.")
     args = parser.parse_args()
     if not 1 <= args.gateway_port <= 65535:
         parser.error("Use uma porta entre 1 e 65535.")
@@ -431,7 +461,7 @@ def main() -> int:
     profile = (input("Perfil AWS existente [default]: ").strip() or "default") if nova else "default"
     if len(profile) > 128 or any(ord(char) < 32 for char in profile):
         raise RuntimeError("Nome de perfil inválido.")
-    mode = choose("Quais MCPs habilitar?", ["Nenhum", "Notes", "Agenda", "Notes + Agenda"], 4) if nova else 1
+    mode = choose("Quais MCPs habilitar?", ["Nenhum", "Notes", "Agenda", "Todos do catálogo"], 4) if nova and args.mcps is None else (4 if nova else 1)
     fixtures = yes("Semear Agenda com evento fictício em 16/05/2030, 10–11h?") if mode in (3, 4) else False
     lan = choose("Onde o app vai rodar?", ["Mac / iOS Simulator — somente loopback", "iPhone físico — gateway na rede local"], 1) == 2
     if lan:
@@ -444,7 +474,7 @@ def main() -> int:
         raise RuntimeError("Token inválido.")
     if lan and token == "local":
         print("Atenção: o token padrão é previsível. Use outro token para acesso pela rede local.")
-    selected = servers(mode, fixtures)
+    selected = servers(mode, fixtures, args.mcps.split(",") if args.mcps is not None else None)
     env = environment("nova" if nova else "fake", profile, lan, token, selected, args.gateway_port)
     env["_STS_AWS_PROFILE"] = profile
     print(f"\nResumo: provider={env['STS_PROVIDER']}, região=us-east-1, gateway={env['STS_GATEWAY_ADDRESS']}")

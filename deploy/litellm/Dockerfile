@@ -1,11 +1,11 @@
 FROM golang:1.27-bookworm AS mcp-build
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY cmd ./cmd
-COPY internal ./internal
-RUN CGO_ENABLED=1 go build -trimpath -o /out/mcp-notes ./cmd/mcp-notes && \
-    CGO_ENABLED=1 go build -trimpath -o /out/mcp-agenda ./cmd/mcp-agenda
+ENV GOWORK=off
+COPY packages/go ./packages/go
+COPY apps/mcp-notes ./apps/mcp-notes
+COPY apps/mcp-agenda ./apps/mcp-agenda
+RUN cd apps/mcp-notes && CGO_ENABLED=1 go build -trimpath -o /out/mcp-notes ./cmd/mcp-notes
+RUN cd apps/mcp-agenda && CGO_ENABLED=1 go build -trimpath -o /out/mcp-agenda ./cmd/mcp-agenda
 
 # The database image for this release is built with the bedrock-realtime extra
 # (aws-sdk-bedrock-runtime[awscrt]). Pin the multi-architecture manifest so a

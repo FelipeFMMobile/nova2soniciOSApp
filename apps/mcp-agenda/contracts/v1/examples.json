@@ -1,0 +1,20 @@
+[
+  {
+    "status": "ok",
+    "events": [],
+    "timezone": "America/Sao_Paulo"
+  },
+  {
+    "status": "ok",
+    "slots": [],
+    "timezone": "America/Sao_Paulo"
+  },
+  {
+    "status": "cancelled",
+    "id": "example-event"
+  },
+  {
+    "status": "error",
+    "code": "slot_conflict"
+  }
+]

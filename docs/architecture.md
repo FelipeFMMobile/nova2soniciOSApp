@@ -1,16 +1,20 @@
 # Arquitetura
 
 ```text
-App Apple
+App Apple / voice-client
   │ WebSocket /v1/voice · JSON + PCM16 16 kHz
   ▼
-Gateway Go
-  ├─ sessão, VAD/barge-in, renovação e timeouts
-  ├─ schemas, políticas, confirmações e execução de tools
-  └─ chave virtual → LiteLLM /v1/realtime
-                       ├─ perfil AWS somente leitura → Bedrock/Nova
-                       ├─ PostgreSQL → chaves + Usage/Spend
-                       └─ MCP stdio → Notes/Agenda → SQLite funcional
+voice-gateway · monólito modular Go
+  ├─ Conversation → sessão, VAD/barge-in, renovação e timeouts
+  ├─ Actions → autorização, confirmação e execução de tools
+  ├─ contracts/ → voz e envelope assinado
+  ├─ config/integrations/ → aliases, allowlist e políticas
+  └─ portas Realtime/MCP → LiteLLM
+                            ├─ perfil AWS somente leitura → Bedrock/Nova
+                            ├─ PostgreSQL → chaves + Usage/Spend
+                            └─ MCP stdio
+                                 ├─ mcp-notes → contrato e SQLite próprios
+                                 └─ mcp-agenda → contrato e SQLite próprios
 ```
 
 O protocolo público do app termina no Go. O adaptador Go traduz entre os
@@ -24,11 +28,14 @@ Cada WebSocket usa seu `requestId` como session/trace ID e recebe as tags
 ## Responsabilidades
 
 - App: captura/reprodução, UI e descarte imediato de áudio interrompido.
-- Go: autenticação local, estado, PCM, histórico textual limitado, renovação,
-  autorização e idempotência de ferramentas.
+- Voice gateway: autenticação local, estado, PCM, histórico textual limitado,
+  renovação, autorização e confirmação de ferramentas.
+- Apps MCP: regras de negócio, contratos públicos, persistência e ledger
+  idempotente de suas próprias operações.
 - LiteLLM: conexão Bedrock Realtime, credenciais AWS, grants e spend logs.
 - PostgreSQL: uso/custo e estado operacional do LiteLLM, sem conteúdo.
-- SQLite Notes/Agenda: dados de negócio e replay seguro de mutações.
+- SQLite Notes/Agenda: dados de negócio e replay seguro de mutações, sem schema
+  ou ledger compartilhado entre as aplicações.
 
 O SQLite de auditoria do gateway foi removido. Instalações existentes não são
 migradas nem apagadas; suas tabelas antigas ficam órfãs.

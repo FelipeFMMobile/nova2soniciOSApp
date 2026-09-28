@@ -1,0 +1,20 @@
+{
+  "name": "mcp-notes",
+  "language": "go",
+  "build": [
+    "go",
+    "build",
+    "-trimpath",
+    "-o",
+    "../../bin/mcp-notes",
+    "./cmd/mcp-notes"
+  ],
+  "test": [
+    "go",
+    "test",
+    "./..."
+  ],
+  "run": [
+    "../../bin/mcp-notes"
+  ]
+}

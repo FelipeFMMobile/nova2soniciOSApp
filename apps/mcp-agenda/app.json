@@ -1,0 +1,20 @@
+{
+  "name": "mcp-agenda",
+  "language": "go",
+  "build": [
+    "go",
+    "build",
+    "-trimpath",
+    "-o",
+    "../../bin/mcp-agenda",
+    "./cmd/mcp-agenda"
+  ],
+  "test": [
+    "go",
+    "test",
+    "./..."
+  ],
+  "run": [
+    "../../bin/mcp-agenda"
+  ]
+}

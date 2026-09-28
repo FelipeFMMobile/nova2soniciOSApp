@@ -43,45 +43,45 @@ apple-ui-test:
 	xcodebuild -project $(APPLE_PROJECT) -scheme NovaVoice -destination 'platform=iOS Simulator,id=$(APPLE_SIMULATOR_ID)' -configuration Debug -derivedDataPath $(APPLE_BUILD_ROOT)-ios -parallel-testing-enabled NO test -quiet
 
 build:
-	env GOCACHE=$(GOCACHE) go build ./...
+	env GOCACHE=$(GOCACHE) python3 scripts/modules.py build
 
 test:
-	env GOCACHE=$(GOCACHE) go test ./...
+	env GOCACHE=$(GOCACHE) python3 scripts/modules.py test
 
 race:
-	env GOCACHE=$(GOCACHE) go test -race ./...
+	env GOCACHE=$(GOCACHE) python3 scripts/modules.py race
 
 vet:
-	env GOCACHE=$(GOCACHE) go vet ./...
+	env GOCACHE=$(GOCACHE) python3 scripts/modules.py vet
 
 gateway:
-	env GOCACHE=$(GOCACHE) go run ./cmd/gateway
+	env GOCACHE=$(GOCACHE) go run ./apps/voice-gateway/cmd/gateway
 
 mcp:
-	env GOCACHE=$(GOCACHE) go run ./cmd/mcp-notes
+	env GOCACHE=$(GOCACHE) go run ./apps/mcp-notes/cmd/mcp-notes
 
 mcp-build:
-	env GOCACHE=$(GOCACHE) go build -o bin/mcp-notes ./cmd/mcp-notes
+	env GOCACHE=$(GOCACHE) go build -o bin/mcp-notes ./apps/mcp-notes/cmd/mcp-notes
 
 agenda-build:
-	env GOCACHE=$(GOCACHE) go build -o bin/mcp-agenda ./cmd/mcp-agenda
+	env GOCACHE=$(GOCACHE) go build -o bin/mcp-agenda ./apps/mcp-agenda/cmd/mcp-agenda
 
 mcp-gateway: mcp-build
-	env GOCACHE=$(GOCACHE) STS_PROVIDER=nova STS_MCP_COMMAND="$(CURDIR)/bin/mcp-notes" STS_MCP_ARGS='["-db","$(CURDIR)/data/sts.sqlite"]' go run ./cmd/gateway
+	env GOCACHE=$(GOCACHE) STS_PROVIDER=nova STS_MCP_COMMAND="$(CURDIR)/bin/mcp-notes" STS_MCP_ARGS='["-db","$(CURDIR)/data/sts.sqlite"]' go run ./apps/voice-gateway/cmd/gateway
 
 fmt:
-	gofmt -w cmd internal tests
+	gofmt -w apps/voice-gateway apps/voice-client apps/mcp-notes apps/mcp-agenda packages/go tests
 
 check: build test race vet
 
 voice-demo:
-	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client
+	env GOCACHE=$(GOCACHE) go run ./apps/voice-client/cmd/voice-client
 
 voice-cancel:
-	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -cancel-after 120ms
+	env GOCACHE=$(GOCACHE) go run ./apps/voice-client/cmd/voice-client -cancel-after 120ms
 
 nova-demo:
-	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -provider nova -wav "$(WAV)" -output "$(NOVA_GATEWAY_OUTPUT)"
+	env GOCACHE=$(GOCACHE) go run ./apps/voice-client/cmd/voice-client -provider nova -wav "$(WAV)" -output "$(NOVA_GATEWAY_OUTPUT)"
 
 nova-barge-demo:
-	env GOCACHE=$(GOCACHE) go run ./cmd/voice-client -provider nova -wav "$(WAV)" -barge-wav "$(BARGE_WAV)" -output "$(NOVA_BARGE_OUTPUT)"
+	env GOCACHE=$(GOCACHE) go run ./apps/voice-client/cmd/voice-client -provider nova -wav "$(WAV)" -barge-wav "$(BARGE_WAV)" -output "$(NOVA_BARGE_OUTPUT)"

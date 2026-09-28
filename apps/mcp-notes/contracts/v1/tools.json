@@ -1,0 +1,64 @@
+[
+  {
+    "name": "notes.create",
+    "description": "Cria uma nota persistente com título e conteúdo. Use para registrar informação solicitada pelo usuário.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "title",
+        "content"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "notes.list",
+    "description": "Busca notas persistentes por trecho do título ou conteúdo. Consulte para responder sobre informações armazenadas; query vazio lista notas.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "notes.delete",
+    "description": "Solicita excluir uma nota pelo ID retornado por notes.list. Se receber confirmation_required, peça ao usuário que diga exatamente confirmo excluir. Só anuncie exclusão após status deleted.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "destructiveHint": true
+    }
+  }
+]

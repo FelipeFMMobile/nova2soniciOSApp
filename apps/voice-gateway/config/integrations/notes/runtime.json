@@ -1,0 +1,13 @@
+{
+  "name": "notes",
+  "alias": "memo",
+  "server_id": "sts-notes",
+  "command": "bin/mcp-notes",
+  "cwd": ".",
+  "args": [
+    "-db",
+    "{root}/data/sts.sqlite"
+  ],
+  "env": {},
+  "fixture_args": []
+}

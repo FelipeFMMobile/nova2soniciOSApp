@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "created"
+        },
+        "event": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "start": {
+              "type": "string"
+            },
+            "end": {
+              "type": "string"
+            },
+            "start_local": {
+              "type": "string"
+            },
+            "end_local": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "start",
+            "end",
+            "start_local",
+            "end_local",
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "event",
+        "timezone"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "cancelled"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "ok"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              },
+              "start_local": {
+                "type": "string"
+              },
+              "end_local": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "start",
+              "end",
+              "start_local",
+              "end_local",
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "events",
+        "timezone"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "ok"
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              },
+              "start_local": {
+                "type": "string"
+              },
+              "end_local": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "start",
+              "end",
+              "start_local",
+              "end_local",
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "slots",
+        "timezone"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "error"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "code"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

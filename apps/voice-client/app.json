@@ -1,0 +1,20 @@
+{
+  "name": "voice-client",
+  "language": "go",
+  "build": [
+    "go",
+    "build",
+    "-trimpath",
+    "-o",
+    "../../bin/voice-client",
+    "./cmd/voice-client"
+  ],
+  "test": [
+    "go",
+    "test",
+    "./..."
+  ],
+  "run": [
+    "../../bin/voice-client"
+  ]
+}

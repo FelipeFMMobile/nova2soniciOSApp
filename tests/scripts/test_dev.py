@@ -6,6 +6,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 import urllib.request
@@ -216,3 +217,34 @@ class DevTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CatalogExtensionTests(unittest.TestCase):
+    def test_new_app_requires_no_alias_branch(self):
+        entry = {"name": "inventory", "alias": "stock", "server_id": "inventory-java",
+                 "command": "bin/inventory", "cwd": "apps/inventory", "args": ["{root}/config.json"],
+                 "env": {"API_KEY": "INVENTORY_API_KEY"}, "fixture_args": [],
+                 "allowed_tools": ["inventory.list"], "policies": {"inventory.list": "read_only"}}
+        with patch.object(dev, "integration_catalog", return_value=[entry]):
+            selected = dev.servers(4, False, ["inventory"])
+        self.assertEqual(selected[0]["cwd"], str(ROOT / "apps/inventory"))
+        self.assertEqual(dev.gateway_servers(selected)[0]["server_id"], "inventory-java")
+        self.assertEqual(selected[0]["env"], {"API_KEY": "INVENTORY_API_KEY"})
+
+    def test_external_catalog_is_discovered_and_forwarded(self):
+        with self.subTest("catalog"):
+            with tempfile.TemporaryDirectory() as directory:
+                integration = Path(directory) / "inventory"
+                integration.mkdir()
+                (integration / "runtime.json").write_text(json.dumps({
+                    "name": "inventory", "alias": "stock", "server_id": "inventory-java",
+                    "command": "apps/inventory/mvnw", "cwd": "apps/inventory", "args": [],
+                    "env": {}, "fixture_args": []
+                }))
+                (integration / "profile.json").write_text(json.dumps({
+                    "tools": {"inventory.list": {"policy": "read_only"}}
+                }))
+                with patch.dict(dev.os.environ, {"STS_INTEGRATIONS_DIR": directory}, clear=False):
+                    selected = dev.servers(4, False, ["inventory"])
+                    env = dev.environment("fake", "default", False, "local", selected)
+                self.assertEqual(selected[0]["allowed_tools"], ["inventory.list"])
+                self.assertEqual(env["STS_INTEGRATIONS_DIR"], directory)

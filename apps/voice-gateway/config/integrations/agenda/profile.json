@@ -1,0 +1,1 @@
+{"tools":{"agenda.list_slots":{"policy":"read_only","datetime_fields":["start","end"]},"agenda.list_events":{"policy":"read_only","datetime_fields":["start","end"]},"agenda.create_event":{"policy":"explicit_intent","direct":true,"datetime_fields":["start","end"]},"agenda.cancel_event":{"policy":"confirm_later","confirmation_phrase":"confirmo cancelar agendamento"}}}

@@ -1,0 +1,12 @@
+{
+  "name": "domain-analysis",
+  "author": "Tech Leads Club",
+  "page": "https://agent-skills.techleads.club/skills/domain-analysis/",
+  "repository": "https://github.com/tech-leads-club/agent-skills",
+  "revision": "8dca4593d92e99c275c5275e01cd2e4e4a4775eb",
+  "upstream_path": "packages/skills-catalog/skills/(architecture)/domain-analysis/SKILL.md",
+  "retrieved_at": "2026-09-27",
+  "sha256": "12c21b8e654ce878bc85252b0a5ae3ceed0c26f6bb1d586996413aade6bae15c",
+  "license": "CC-BY-4.0 (skill content); see LICENSE.upstream",
+  "modified": false
+}

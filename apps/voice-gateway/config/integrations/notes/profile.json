@@ -1,0 +1,1 @@
+{"tools":{"notes.list":{"policy":"read_only"},"notes.create":{"policy":"explicit_intent","direct":true},"notes.delete":{"policy":"confirm_later","confirmation_phrase":"confirmo excluir","allow_ui_confirmation":true}}}

@@ -1,0 +1,135 @@
+[
+  {
+    "name": "agenda.list_slots",
+    "description": "Consulta horários disponíveis na agenda fictícia local, America/Sao_Paulo, dias úteis 09–18h. Esclareça datas e duração ambíguas.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 20,
+          "maxLength": 35,
+          "description": "Início em RFC3339: AAAA-MM-DDTHH:MM:SS com offset explícito. Em America/Sao_Paulo, 20 de maio de 2030 às 09:00 corresponde a 2030-05-20T09:00:00-03:00. Envie a data completa, não texto por extenso. O exemplo não é uma data padrão; esclareça ano ou data ausente.",
+          "examples": [
+            "2030-05-20T09:00:00-03:00"
+          ]
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 20,
+          "maxLength": 35,
+          "description": "Fim exclusivo em RFC3339 com offset explícito, posterior a start. Para o início do exemplo e duração de uma hora, envie 2030-05-20T10:00:00-03:00. O exemplo não é um valor padrão; use a duração informada pelo usuário ou peça esclarecimento.",
+          "examples": [
+            "2030-05-20T10:00:00-03:00"
+          ]
+        },
+        "duration_minutes": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 240,
+          "multipleOf": 15
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "duration_minutes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "agenda.list_events",
+    "description": "Consulta eventos fictícios por intervalo absoluto. start/end são UTC. Para falar horários ao usuário, use start_local/end_local, calculados em America/Sao_Paulo; não chame o valor UTC de horário de Brasília.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 20,
+          "maxLength": 35,
+          "description": "Início em RFC3339: AAAA-MM-DDTHH:MM:SS com offset explícito. Em America/Sao_Paulo, 20 de maio de 2030 às 09:00 corresponde a 2030-05-20T09:00:00-03:00. Envie a data completa, não texto por extenso. O exemplo não é uma data padrão; esclareça ano ou data ausente.",
+          "examples": [
+            "2030-05-20T09:00:00-03:00"
+          ]
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 20,
+          "maxLength": 35,
+          "description": "Fim exclusivo em RFC3339 com offset explícito, posterior a start. Para o início do exemplo e duração de uma hora, envie 2030-05-20T10:00:00-03:00. O exemplo não é um valor padrão; use a duração informada pelo usuário ou peça esclarecimento.",
+          "examples": [
+            "2030-05-20T10:00:00-03:00"
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "agenda.create_event",
+    "description": "Cria diretamente um evento quando esta ferramenta é chamada com argumentos válidos. O host não exige frase específica de pedido nem confirmação adicional para criação. O usuário pode falar datas por extenso; converta os argumentos antes da chamada. Esclareça horário, data, ano, duração ou título ausente/ambíguo. Envie start e end em RFC3339 com offset explícito, por exemplo {\"title\":\"pocket\",\"start\":\"2030-05-20T09:00:00-03:00\",\"end\":\"2030-05-20T10:00:00-03:00\"}. Esse exemplo ilustra uma hora, não valores padrão. Calcule end pela duração informada, posterior a start. Não peça formatos técnicos ao usuário. Nunca anuncie sucesso antes de status created.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 20,
+          "maxLength": 35,
+          "description": "Início em RFC3339: AAAA-MM-DDTHH:MM:SS com offset explícito. Em America/Sao_Paulo, 20 de maio de 2030 às 09:00 corresponde a 2030-05-20T09:00:00-03:00. Envie a data completa, não texto por extenso. O exemplo não é uma data padrão; esclareça ano ou data ausente.",
+          "examples": [
+            "2030-05-20T09:00:00-03:00"
+          ]
+        },
+        "end": {
+          "type": "string",
+          "format": "date-time",
+          "minLength": 20,
+          "maxLength": 35,
+          "description": "Fim exclusivo em RFC3339 com offset explícito, posterior a start. Para o início do exemplo e duração de uma hora, envie 2030-05-20T10:00:00-03:00. O exemplo não é um valor padrão; use a duração informada pelo usuário ou peça esclarecimento.",
+          "examples": [
+            "2030-05-20T10:00:00-03:00"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "title"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "agenda.cancel_event",
+    "description": "Cancela somente o ID retornado pela consulta e após confirmação posterior. Peça exatamente confirmo cancelar agendamento. Só anuncie cancelamento após status cancelled.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

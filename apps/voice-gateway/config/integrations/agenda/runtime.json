@@ -1,0 +1,15 @@
+{
+  "name": "agenda",
+  "alias": "local",
+  "server_id": "sts-agenda",
+  "command": "bin/mcp-agenda",
+  "cwd": ".",
+  "args": [
+    "-db",
+    "{root}/data/agenda.sqlite"
+  ],
+  "env": {},
+  "fixture_args": [
+    "-fixtures"
+  ]
+}

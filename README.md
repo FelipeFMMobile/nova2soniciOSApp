@@ -5,16 +5,18 @@ para um gateway Go; o gateway mantém o controle da conversa e usa o endpoint
 Realtime do LiteLLM para chegar ao Amazon Nova 2 Sonic no Bedrock.
 
 ```text
-App Apple → gateway Go (:8080) → LiteLLM /v1/realtime (:4000) → Bedrock/Nova
-                    ↕                    ↕
-          políticas e tools       PostgreSQL Usage/Spend
-                                         ↕
-                               MCP Notes/Agenda → SQLite
+App Apple / voice-client → voice-gateway (:8080) → LiteLLM (:4000) → Bedrock/Nova
+                              │                    ├─ PostgreSQL Usage/Spend
+                  Conversation + Actions          └─ MCP JSON-RPC/stdio
+                  contratos de voz                    ├─ mcp-notes → SQLite Notes
+                  config/integrations                 └─ mcp-agenda → SQLite Agenda
 ```
 
-O Go nunca recebe credenciais AWS. Ele usa uma chave virtual restrita ao
+O gateway nunca recebe credenciais AWS. Ele usa uma chave virtual restrita ao
 modelo `nova-sonic`, à rota Realtime e aos MCPs selecionados. LiteLLM é o único
-componente com o perfil AWS e também a fonte de monitoramento de custo.
+componente com o perfil AWS e também a fonte de monitoramento de custo. Cada
+aplicação MCP possui seus contratos, regras, migrações e dados; o gateway possui
+os contratos de voz e os perfis confiáveis de consumo.
 
 ![Arquitetura da POC](docs/images/architecture-litellm.png)
 
@@ -146,3 +148,18 @@ Usage/Spend após executá-lo.
 - [Protocolo público de voz](docs/voice-protocol.md)
 - [Integração MCP](docs/mcp-integration.md)
 - [App Apple](docs/apple-app.md)
+
+## Evolução modular
+
+O [harness de arquitetura](harness/README.md) contém a skill `domain-analysis`,
+os perfis de agentes e o roteiro reutilizável. A [análise de domínios](docs/domains/analysis.md)
+e o [plano de migração](docs/domains/migration-plan.md) orientam a organização
+em aplicações independentes e módulos por domínio, incluindo futuros MCPs Spring.
+A implementação e suas validações estão no [registro da migração](docs/domains/migration-review.md).
+
+As apps Go ficam em `apps/voice-gateway`, `apps/voice-client`, `apps/mcp-notes`
+e `apps/mcp-agenda`, cada uma com `go.mod`, manifesto e Dockerfile. `make check`
+percorre todos os módulos com `GOWORK=off`; `go test ./...` na raiz cobre apenas
+a suíte de integração da raiz. Bibliotecas técnicas locais ficam em `packages/go`.
+Os contratos pertencem às apps e os perfis de integração pertencem ao gateway.
+Consulte [como adicionar uma aplicação](docs/domains/new-application.md).
