@@ -6,7 +6,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [packages/go/audio, packages/go/mcpwire, packages/go/voicewire, packages/go/testkit, apps/mcp-notes, apps/mcp-agenda, apps/voice-client, apps/voice-gateway]
+        module: [packages/go/agentwire, apps/personal-assistant-agent, packages/go/audio, packages/go/mcpwire, packages/go/voicewire, packages/go/testkit, apps/mcp-notes, apps/mcp-agenda, apps/voice-client, apps/voice-gateway]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

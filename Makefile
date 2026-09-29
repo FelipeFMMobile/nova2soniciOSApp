@@ -70,7 +70,7 @@ agenda-build:
 	env GOCACHE=$(GOCACHE) go build -o bin/mcp-agenda ./apps/mcp-agenda/cmd/mcp-agenda
 
 mcp-gateway: mcp-build
-	env GOCACHE=$(GOCACHE) STS_PROVIDER=nova STS_MCP_COMMAND="$(CURDIR)/bin/mcp-notes" STS_MCP_ARGS='["-db","$(CURDIR)/data/sts.sqlite"]' go run ./apps/voice-gateway/cmd/gateway
+	env GOCACHE=$(GOCACHE) STS_AGENT_MODE=inprocess STS_PROVIDER=nova STS_MCP_COMMAND="$(CURDIR)/bin/mcp-notes" STS_MCP_ARGS='["-db","$(CURDIR)/data/sts.sqlite"]' go run ./apps/voice-gateway/cmd/gateway
 
 fmt:
 	gofmt -w apps/voice-gateway apps/personal-assistant-agent apps/voice-client apps/mcp-notes apps/mcp-agenda packages/go tests
@@ -88,3 +88,13 @@ nova-demo:
 
 nova-barge-demo:
 	env GOCACHE=$(GOCACHE) go run ./apps/voice-client/cmd/voice-client -provider nova -wav "$(WAV)" -barge-wav "$(BARGE_WAV)" -output "$(NOVA_BARGE_OUTPUT)"
+
+# Local, deterministic rollout gates; no AWS inference.
+agent-parity:
+	cd apps/voice-gateway && GOWORK=off GOCACHE=$(GOCACHE) go test ./internal/adapters/voice -run TestAgentRolloutParity -count=1
+
+agent-latency:
+	cd packages/go/agentwire && GOWORK=off GOCACHE=$(GOCACHE) STS_AGENT_LATENCY=1 go test -run TestLocalTransportLatency -count=1 -v
+
+agent-clients: build
+	GOWORK=off GOCACHE=$(GOCACHE) STS_ROLLOUT_APPLE=1 go test ./tests/e2e -run TestAgentRolloutProcesses -count=1 -v

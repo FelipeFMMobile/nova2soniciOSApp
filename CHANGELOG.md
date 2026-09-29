@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.10.0 — Agent Session v1 e rollout local
+
+- transporte remoto padrão com heartbeat e métricas; rollback in-process durante
+  toda a minor `v0.10.x`; demo fake explicitamente in-process;
+- supervisor inicia agente e gateway com credenciais separadas;
+- testes espelhados, MCPs SQLite reais, CLI e Apple VoiceCore com Realtime simulado;
+- gate de latência local p95 adicional ≤ 10 ms, aprovado pelo usuário;
+- sem downgrade automático de Agent Session v1 para v1alpha1.
+
+| Binários / contratos | Compatibilidade |
+| --- | --- |
+| Gateway + agente `v0.10.x` | Agent Session `v1` |
+| CLI + Apple existentes | Voice `v1`, sem mudança de produção |
+| Host Context / Notes / Agenda | `v1`, inalterados |
+| Rollback | `STS_AGENT_MODE=inprocess` no conjunto `v0.10.x` |
+
+Não misture gateway `v0.10.x` e agente `v0.9.x`. Para reverter binários, volte
+os dois e o catálogo juntos. Evidência local e limitações em
+[rollout](docs/domains/agent-rollout-validation.md).
+
 ## v0.9.0 — Agent Session remoto opt-in
 
 - nova aplicação `personal-assistant-agent`, dona de prompt, Realtime, actions,

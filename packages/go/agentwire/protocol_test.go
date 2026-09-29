@@ -13,7 +13,7 @@ func TestProtocolRejectsUnknownVersionFieldsAndOrphanAudio(t *testing.T) {
 	}
 	for _, raw := range [][]byte{
 		[]byte(`{"protocol":"agent-session/v2","kind":"session.open"}`),
-		[]byte(`{"protocol":"agent-session/v1alpha1","kind":"session.open","unknown":true}`),
+		[]byte(`{"protocol":"agent-session/v1","kind":"session.open","unknown":true}`),
 	} {
 		if _, err := Decode(raw); err == nil {
 			t.Fatalf("invalid message accepted: %s", raw)

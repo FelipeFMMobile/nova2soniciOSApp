@@ -64,6 +64,7 @@ gere a chave com `scripts/litellm_service_key.py` e exporte:
 
 ```bash
 export STS_PROVIDER=nova
+export STS_AGENT_MODE=inprocess # execução manual legada; make dev usa remoto
 export STS_LITELLM_URL=http://127.0.0.1:4000
 export STS_LITELLM_API_KEY='chave-virtual-sts-go-gateway'
 export STS_LITELLM_REALTIME_MODEL=nova-sonic
@@ -125,3 +126,12 @@ Antes do corte, confirme:
 Referências: [provider Bedrock do LiteLLM](https://github.com/BerriAI/litellm-docs/blob/main/docs/providers/bedrock.md),
 [cost tracking](https://github.com/BerriAI/litellm-docs/blob/main/docs/proxy/cost_tracking.md) e
 [Admin UI](https://github.com/BerriAI/litellm-docs/blob/main/docs/proxy/docker_quick_start.md).
+
+## Rollout Agent Session v1
+
+`make dev` inicia agente e gateway em processos separados. O segredo LiteLLM e
+a configuração MCP ficam apenas no agente; o gateway recebe catálogo e credencial
+interna gerada por execução. `python3 scripts/dev.py --agent-mode inprocess`
+exercita o rollback mantido em `v0.10.x`. Nenhuma sessão é duplicada nos dois modos.
+O protocolo público continua Voice v1. Para execução remota manual, use os dois
+shells separados do README; não reutilize o ambiente semântico no gateway.

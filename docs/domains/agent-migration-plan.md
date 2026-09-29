@@ -1,6 +1,7 @@
 # Plano revisado — gateway de voz e aplicações agênticas
 
-Data: 2026-09-28. Estado: proposta analisada; runtime ainda não migrado.
+Data do plano: 2026-09-28. As seções de inventário abaixo descrevem a base
+`v0.7.0`; andamento atual em [implementação](agent-migration-implementation.md).
 
 Base versionada: tag `v0.7.0`, commit `bd593ce4a73551da054bd98efec2bfdec63eb795`.
 Branch de trabalho: `codex/agent-migration-v1`.
@@ -27,7 +28,7 @@ turno. Hoje o caminho Nova real está em
 `VoiceProvider`, usada pelo fake. Uma abstração baseada somente em `Respond`
 não caracteriza renovação, VAD contínuo, confirmação, tools ou histórico.
 
-## Estado atual confirmado
+## Estado confirmado na base v0.7.0
 
 - A tag `v0.7.0` já contém apps independentes para gateway, cliente, Notes e
   Agenda. Esta proposta começa depois da migração modular anterior.

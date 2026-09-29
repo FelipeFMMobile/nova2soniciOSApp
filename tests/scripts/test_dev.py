@@ -248,3 +248,38 @@ class CatalogExtensionTests(unittest.TestCase):
                     env = dev.environment("fake", "default", False, "local", selected)
                 self.assertEqual(selected[0]["allowed_tools"], ["inventory.list"])
                 self.assertEqual(env["STS_INTEGRATIONS_DIR"], directory)
+
+class AgentRolloutTests(unittest.TestCase):
+    def test_remote_splits_secrets_and_uses_fresh_internal_credential(self):
+        env = dev.environment("nova", "default", False, "edge-secret", [])
+        env.update(STS_AGENT_MODE="remote", STS_AGENT_ADDRESS="127.0.0.1:8090",
+                   STS_LITELLM_API_KEY="model-secret", STS_MCP_CONTEXT_SECRET="mcp-secret",
+                   STS_MCP_BACKEND="litellm", STS_LITELLM_MCP_SERVERS="[]")
+        gateway, agent = dev.runtime_environments(env)
+        for key in ("STS_LITELLM_API_KEY", "STS_LITELLM_URL", "STS_LITELLM_REALTIME_MODEL",
+                    "STS_MCP_CONTEXT_SECRET", "STS_MCP_BACKEND", "STS_LITELLM_MCP_SERVERS",
+                    "STS_AGENT_PROMPT_FILE"):
+            self.assertNotIn(key, gateway)
+            self.assertEqual(agent[key], env[key])
+        self.assertNotIn("STS_DEVELOPMENT_TOKEN", agent)
+        self.assertNotIn("STS_GATEWAY_ADDRESS", agent)
+        self.assertEqual(gateway["STS_AGENT_TOKEN"], agent["STS_AGENT_TOKEN"])
+        self.assertNotEqual(gateway["STS_AGENT_TOKEN"], "edge-secret")
+        self.assertNotEqual(gateway["STS_AGENT_TOKEN"], dev.runtime_environments(env)[0]["STS_AGENT_TOKEN"])
+        catalog = json.loads(gateway["STS_AGENT_CATALOG"])
+        self.assertEqual(catalog[0]["protocol"], "agent-session/v1")
+        self.assertEqual(catalog[0]["endpoint"], "ws://127.0.0.1:8090/v1/session")
+
+    def test_inprocess_rollback_preserves_runtime_and_has_no_child_agent(self):
+        env = {"STS_AGENT_MODE": "inprocess", "STS_LITELLM_API_KEY": "model-secret"}
+        gateway, agent = dev.runtime_environments(env)
+        self.assertEqual(gateway, env)
+        self.assertIsNone(agent)
+
+    def test_cli_selects_explicit_rollback(self):
+        with patch("builtins.input", side_effect=["2", "", "4", "n", "1", "test-token", "s"]), \
+             patch.object(sys.stdin, "isatty", return_value=False), \
+             patch.object(sys, "argv", ["dev.py", "--agent-mode", "inprocess"]), \
+             patch.object(dev, "run") as launch:
+            self.assertEqual(dev.main(), 0)
+        self.assertEqual(launch.call_args.args[0]["STS_AGENT_MODE"], "inprocess")

@@ -6,6 +6,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_ENV", "development")
 	t.Setenv("STS_PROVIDER", "fake")
 
@@ -22,6 +23,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestRejectsUnsupportedProvider(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_ENV", "development")
 	t.Setenv("STS_PROVIDER", "qwen")
 
@@ -31,6 +33,7 @@ func TestRejectsUnsupportedProvider(t *testing.T) {
 }
 
 func TestNovaRequiresLiteLLM(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_ENV", "development")
 	t.Setenv("STS_PROVIDER", "nova")
 	t.Setenv("STS_LITELLM_URL", "")
@@ -52,6 +55,7 @@ func TestNovaRequiresLiteLLM(t *testing.T) {
 }
 
 func TestNovaRejectsInvalidLiteLLMFields(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	for _, tc := range []struct{ name, url, key, model string }{
 		{"missing URL", "", "key", "nova-sonic"},
 		{"invalid URL", "file:///tmp/litellm", "key", "nova-sonic"},
@@ -71,6 +75,7 @@ func TestNovaRejectsInvalidLiteLLMFields(t *testing.T) {
 }
 
 func TestRejectsMalformedLimits(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	for _, tc := range []struct{ key, value string }{{"STS_READ_TIMEOUT", "oops"}, {"STS_WRITE_TIMEOUT", "0s"}, {"STS_IDLE_TIMEOUT", "-1s"}, {"STS_TURN_TIMEOUT", "-5s"}, {"STS_MAX_SESSIONS", "0"}, {"STS_MAX_EVENT_BYTES", "oops"}} {
 		t.Run(tc.key, func(t *testing.T) {
 			t.Setenv(tc.key, tc.value)
@@ -82,6 +87,7 @@ func TestRejectsMalformedLimits(t *testing.T) {
 }
 
 func TestNonLoopbackRequiresToken(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_ENV", "development")
 	t.Setenv("STS_PROVIDER", "fake")
 	t.Setenv("STS_GATEWAY_ADDRESS", "0.0.0.0:8080")
@@ -96,6 +102,7 @@ func TestNonLoopbackRequiresToken(t *testing.T) {
 }
 
 func TestNovaSessionAgeCannotReachBedrockHardLimit(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_NOVA_MAX_SESSION_AGE", "8m")
 	if _, err := Load(); err == nil {
 		t.Fatal("unsafe renewal deadline accepted")
@@ -103,6 +110,7 @@ func TestNovaSessionAgeCannotReachBedrockHardLimit(t *testing.T) {
 }
 
 func TestMCPConfigurationIsNotShellCode(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_MCP_COMMAND", "/absolute/bin/mcp-notes")
 	t.Setenv("STS_MCP_ARGS", `["-db","a path/sts.sqlite"]`)
 	cfg, err := Load()
@@ -121,6 +129,7 @@ func TestMCPConfigurationIsNotShellCode(t *testing.T) {
 }
 
 func TestExplicitMultipleServers(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_MCP_COMMAND", "")
 	t.Setenv("STS_MCP_SERVERS", `[{"alias":"local","command":"/absolute/mcp-agenda","args":["-db","a path/agenda.sqlite"],"allowed_tools":["agenda.list_events"],"policies":{"agenda.list_events":"read_only"}}]`)
 	cfg, err := Load()
@@ -134,6 +143,7 @@ func TestExplicitMultipleServers(t *testing.T) {
 }
 
 func TestLiteLLMGatewayConfiguration(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "inprocess")
 	t.Setenv("STS_MCP_BACKEND", "litellm")
 	t.Setenv("STS_LITELLM_URL", "http://127.0.0.1:4000")
 	t.Setenv("STS_LITELLM_API_KEY", "service-key")
@@ -154,7 +164,7 @@ func TestRemoteAgentUsesTrustedCatalogWithoutSemanticSecrets(t *testing.T) {
 	t.Setenv("STS_PROVIDER", "nova")
 	t.Setenv("STS_DEFAULT_AGENT_ID", "personal-assistant")
 	t.Setenv("STS_AGENT_TOKEN", "internal-token")
-	t.Setenv("STS_AGENT_CATALOG", `[{"id":"fake-agent","endpoint":"ws://127.0.0.1:8091/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN"},{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN"}]`)
+	t.Setenv("STS_AGENT_CATALOG", `[{"id":"fake-agent","endpoint":"ws://127.0.0.1:8091/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN"},{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN"}]`)
 	cfg, err := Load()
 	if err != nil || cfg.AgentMode != "remote" || len(cfg.AgentCatalog) != 2 || cfg.LiteLLMAPIKey != "" || cfg.MCPContextSecret != "" {
 		t.Fatal(cfg, err)
@@ -174,8 +184,22 @@ func TestRemoteAgentFailsClosedForUnknownDefault(t *testing.T) {
 	t.Setenv("STS_PROVIDER", "nova")
 	t.Setenv("STS_DEFAULT_AGENT_ID", "unknown")
 	t.Setenv("STS_AGENT_TOKEN", "internal-token")
-	t.Setenv("STS_AGENT_CATALOG", `[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN"}]`)
+	t.Setenv("STS_AGENT_CATALOG", `[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN"}]`)
 	if _, err := Load(); err == nil {
 		t.Fatal("unknown default agent accepted")
+	}
+}
+
+func TestDefaultModeRequiresRemoteCatalog(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "")
+	t.Setenv("STS_AGENT_CATALOG", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("default mode silently fell back to local")
+	}
+	t.Setenv("STS_AGENT_TOKEN", "internal-token")
+	t.Setenv("STS_AGENT_CATALOG", `[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN"}]`)
+	cfg, err := Load()
+	if err != nil || cfg.AgentMode != "remote" {
+		t.Fatal(cfg, err)
 	}
 }

@@ -244,7 +244,7 @@ func NewHandler(config ServerConfig, factory AgentSessionFactory) (*Handler, err
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/v1alpha1/session" || r.Method != http.MethodGet {
+	if r.URL.Path != "/v1/session" || r.Method != http.MethodGet {
 		http.NotFound(w, r)
 		return
 	}
@@ -296,6 +296,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = connection.SetReadDeadline(time.Now().Add(h.config.IdleTimeout))
+	connection.SetPongHandler(func(string) error { return connection.SetReadDeadline(time.Now().Add(h.config.IdleTimeout)) })
+	heartbeat := time.NewTicker(max(time.Nanosecond, h.config.IdleTimeout/3))
+	defer heartbeat.Stop()
 	commands := make(chan AgentCommand, RemoteQueueDepth)
 	readError := make(chan error, 1)
 	go h.readCommands(r.Context(), connection, message.Start.SessionID, commands, readError)
@@ -303,6 +306,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-heartbeat.C:
+			if connection.WriteControl(websocket.PingMessage, nil, time.Now().Add(h.config.WriteTimeout)) != nil {
+				return
+			}
 		case <-readError:
 			return
 		case command := <-commands:

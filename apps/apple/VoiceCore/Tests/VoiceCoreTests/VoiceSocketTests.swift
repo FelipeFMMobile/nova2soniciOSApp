@@ -10,7 +10,7 @@ final class VoiceSocketTests: XCTestCase {
         client.disconnect(); client.disconnect()
     }
 
-    /// Opt in with STS_APPLE_E2E_URL. This connects only to the local fake gateway.
+    /// Opt in with STS_APPLE_E2E_URL; rollout tests use a local simulated Nova peer.
     @MainActor func testFakeGatewayLifecycleAndReconnect() async throws {
         guard let url = ProcessInfo.processInfo.environment["STS_APPLE_E2E_URL"] else { throw XCTSkip("Local fake gateway not requested") }
         let client = VoiceSocket()
@@ -47,8 +47,12 @@ final class VoiceSocketTests: XCTestCase {
                     }
                     if effects.contains(.stopped), !stoppedReceived { stoppedReceived = true; stopped.fulfill() }
                 } catch { XCTFail(String(describing: error)); if !stoppedReceived { stoppedReceived = true; stopped.fulfill() } }
-            }, onFailure: { error in XCTFail(error.localizedDescription); if !stoppedReceived { stoppedReceived = true; stopped.fulfill() } })
-            try await client.connect(url: url, token: "apple-test-token", provider: "fake", requestId: UUID().uuidString)
+            }, onFailure: { error in
+                // A close frame following session.stopped is the expected server shutdown.
+                guard !stoppedReceived else { return }
+                XCTFail(error.localizedDescription); stoppedReceived = true; stopped.fulfill()
+            })
+            try await client.connect(url: url, token: "apple-test-token", provider: ProcessInfo.processInfo.environment["STS_APPLE_E2E_PROVIDER"] ?? "fake", requestId: UUID().uuidString)
             await fulfillment(of: [stopped], timeout: 10)
             await client.disconnect()
             XCTAssertTrue(heardAudio); XCTAssertTrue(transcript)

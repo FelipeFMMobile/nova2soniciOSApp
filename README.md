@@ -16,13 +16,14 @@ App Apple / voice-client → voice-gateway (:8080) → personal-assistant-agent
                                                       └─ mcp-agenda → SQLite Agenda
 ```
 
-O gateway nunca recebe credenciais AWS. Ele usa uma chave virtual restrita ao
+O agente usa uma chave virtual restrita ao
 modelo `nova-sonic`, à rota Realtime e aos MCPs selecionados. LiteLLM é o único
 componente com o perfil AWS e também a fonte de monitoramento de custo. Cada
 aplicação MCP possui seus contratos, regras, migrações e dados; o gateway possui
 o contrato público de voz. Prompt, confirmação e perfis confiáveis de consumo
-pertencem ao agente. `agent-session/v1alpha1` remoto está disponível como
-opt-in local; o adapter in-process continua sendo o padrão e o rollback.
+pertencem ao agente. `agent-session/v1` remoto em loopback é o padrão. O gateway
+não recebe credenciais LiteLLM/MCP. O adapter in-process permanece disponível
+para rollback durante toda a release minor `v0.10.x`.
 
 ![Arquitetura da POC](docs/images/architecture-litellm.png)
 
@@ -53,7 +54,11 @@ Para Nova, ele:
 2. monta `~/.aws` somente no container LiteLLM, em modo somente leitura;
 3. valida a identidade dentro desse container;
 4. cria/atualiza a chave virtual `sts-go-gateway`;
-5. compila e inicia o gateway Go com o adapter temporário in-process do agente.
+5. compila e inicia o agente em loopback e depois o gateway, com ambientes separados
+   e uma credencial interna aleatória por execução.
+
+Para rollback: `python3 scripts/dev.py --agent-mode inprocess`. O ambiente fake
+usado para demonstração permanece explicitamente in-process e dispensa Docker/AWS.
 
 O app continua usando `ws://127.0.0.1:8080/v1/voice`; seu protocolo público
 não mudou. O painel LiteLLM fica em <http://127.0.0.1:4000/ui>.
@@ -67,6 +72,7 @@ Usage/Spend em [docs/nova-litellm-runbook.md](docs/nova-litellm-runbook.md).
 AWS_PROFILE=sts-poc make litellm-up
 
 export STS_PROVIDER=nova
+export STS_AGENT_MODE=inprocess # rollback explícito
 export STS_LITELLM_URL=http://127.0.0.1:4000
 export STS_LITELLM_API_KEY='chave-virtual-sts-go-gateway'
 export STS_LITELLM_REALTIME_MODEL=nova-sonic
@@ -76,7 +82,7 @@ export STS_DEVELOPMENT_TOKEN=local-demo-token
 make gateway
 ```
 
-Para experimentar a separação de processos, inicie o agente em um shell com
+Para o modo remoto padrão, inicie o agente em um shell com
 as variáveis LiteLLM acima e `STS_AGENT_TOKEN=local-agent-token` usando
 `make agent`. Em outro shell, sem variáveis LiteLLM/MCP, inicie o gateway:
 
@@ -84,14 +90,14 @@ as variáveis LiteLLM acima e `STS_AGENT_TOKEN=local-agent-token` usando
 export STS_PROVIDER=nova
 export STS_AGENT_MODE=remote
 export STS_AGENT_TOKEN_GATEWAY=local-agent-token
-export STS_AGENT_CATALOG='[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN_GATEWAY"}]'
+export STS_AGENT_CATALOG='[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN_GATEWAY"}]'
 export STS_GATEWAY_ADDRESS=127.0.0.1:8080
 export STS_DEVELOPMENT_TOKEN=local-demo-token
 make gateway
 ```
 
 O modo remoto falha se o processo do gateway receber configuração ou segredos
-LiteLLM/MCP. `ws://` é aceito somente em loopback nesta versão alpha.
+LiteLLM/MCP. `ws://` é aceito somente em loopback nesta versão.
 
 `deploy/litellm/config.yaml` é a configuração canônica do modelo. A imagem
 LiteLLM está fixada por tag e digest no Dockerfile, incluindo o transporte
@@ -188,3 +194,11 @@ percorre todos os módulos com `GOWORK=off`; `go test ./...` na raiz cobre apena
 a suíte de integração da raiz. Bibliotecas técnicas locais ficam em `packages/go`.
 Os contratos pertencem às apps e os perfis de integração pertencem ao agente.
 Consulte [como adicionar uma aplicação](docs/domains/new-application.md).
+
+## Validação do rollout
+
+`make agent-parity` compara os mesmos cenários in-process/remoto/rollback;
+`make agent-latency` mede o salto interno (gate p95 ≤ 10 ms);
+`make agent-clients` executa CLI e Apple VoiceCore contra binários separados
+e Realtime local simulado. Nenhum desses comandos usa AWS. Evidências e limites
+em [Fase 5](docs/domains/agent-rollout-validation.md).

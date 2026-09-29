@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -35,9 +36,13 @@ func main() {
 		logger.Error("Agent Session configuration rejected", "error", err)
 		os.Exit(1)
 	}
-	server := &http.Server{Addr: config.Address, Handler: handler, ReadHeaderTimeout: config.ReadTimeout}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/v1/session", handler)
+	server := &http.Server{Addr: config.Address, Handler: mux, ReadHeaderTimeout: config.ReadTimeout,
+		BaseContext: func(net.Listener) context.Context { return ctx }}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
 	logger.Info("personal assistant listening", "address", config.Address, "agent_id", config.AgentID, "protocol", agentwire.Protocol)

@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import secrets
 import signal
 import socket
 import subprocess
@@ -109,6 +110,27 @@ def environment(provider: str, profile: str, lan: bool, token: str, selected: li
         env["STS_INTEGRATIONS_DIR"] = integrations_dir
     env.setdefault("GOCACHE", "/private/tmp/sts-go-cache")
     return env
+
+
+def runtime_environments(env: dict[str, str]) -> tuple[dict[str, str], dict[str, str] | None]:
+    """Separate edge credentials from semantic credentials before spawning either app."""
+    if env.get("STS_AGENT_MODE") != "remote":
+        return dict(env), None
+    internal_token = secrets.token_hex(32)
+    address = env.get("STS_AGENT_ADDRESS", "127.0.0.1:8090")
+    edge_keys = {"STS_ENV", "STS_PROVIDER", "STS_AGENT_MODE", "STS_GATEWAY_ADDRESS",
+                 "STS_DEVELOPMENT_TOKEN", "STS_READ_TIMEOUT", "STS_WRITE_TIMEOUT",
+                 "STS_IDLE_TIMEOUT", "STS_MAX_SESSIONS", "STS_MAX_EVENT_BYTES", "STS_TURN_TIMEOUT"}
+    gateway = {key: value for key, value in env.items()
+               if not key.startswith("STS_") or key in edge_keys}
+    gateway.update(STS_AGENT_TOKEN=internal_token, STS_DEFAULT_AGENT_ID="personal-assistant",
+                   STS_AGENT_CATALOG=json.dumps([{"id": "personal-assistant",
+                       "endpoint": f"ws://{address}/v1/session",
+                       "protocol": "agent-session/v1", "token_env": "STS_AGENT_TOKEN"}]))
+    agent = {key: value for key, value in env.items()
+             if key not in edge_keys or key in {"STS_PROVIDER", "STS_TURN_TIMEOUT"}}
+    agent.update(STS_AGENT_ADDRESS=address, STS_AGENT_TOKEN=internal_token)
+    return gateway, agent
 
 
 def load_local_litellm_env() -> dict[str, str]:
@@ -290,8 +312,9 @@ def process_identity(pid: int) -> tuple[str, str] | None:
     if f"n{ROOT}" not in cwd.splitlines() or not started:
         return None
     executable = query(["lsof", "-a", "-p", str(pid), "-d", "txt", "-Fn"])
-    if f"n{ROOT / 'bin/gateway'}" in executable.splitlines():
-        return "gateway", started
+    for name in ("gateway", "personal-assistant-agent"):
+        if f"n{ROOT / 'bin' / name}" in executable.splitlines():
+            return name, started
     return None
 
 
@@ -400,22 +423,27 @@ def wait_ready(children: list[subprocess.Popen], port: int) -> None:
 
 
 def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = False) -> None:
-    for executable in ("go", "make", "docker"):
+    for executable in (("go", "make", "docker") if nova else ("go", "make")):
         if not shutil.which(executable):
             raise RuntimeError(f"Ferramenta ausente: {executable}. Veja os pré-requisitos no README.")
     gateway_port = int(env["STS_GATEWAY_ADDRESS"].rsplit(":", 1)[1])
     ports = [(gateway_port, "0.0.0.0" if env["STS_GATEWAY_ADDRESS"].startswith("0.0.0.0") else "127.0.0.1")]
+    if env.get("STS_AGENT_MODE") == "remote":
+        ports.append((int(env["STS_AGENT_ADDRESS"].rsplit(":", 1)[1]), "127.0.0.1"))
     ensure_ports(ports)
     profile = env.pop("_STS_AWS_PROFILE", "default")
-    local_litellm = ensure_litellm(env, fixtures, profile)
     if nova:
+        local_litellm = ensure_litellm(env, fixtures, profile)
         compose_env = dict(env)
         compose_env.update(load_local_litellm_env(), AWS_PROFILE=profile, AWS_REGION="us-east-1")
         check_litellm_aws_identity(compose_env, profile)
-    configure_litellm_backend(env, selected, local_litellm)
+        configure_litellm_backend(env, selected, local_litellm)
+    gateway_env, agent_env = runtime_environments(env)
     print("\nCompilando gateway…", flush=True)
     (ROOT / "bin").mkdir(exist_ok=True)
     checked(["go", "build", "-o", str(ROOT / "bin/gateway"), "./apps/voice-gateway/cmd/gateway"], env)
+    if agent_env is not None:
+        checked(["go", "build", "-o", str(ROOT / "bin/personal-assistant-agent"), "./apps/personal-assistant-agent/cmd/agent"], agent_env)
     (ROOT / "data").mkdir(exist_ok=True)
     logs = ROOT / "logs/dev"
     logs.mkdir(parents=True, exist_ok=True)
@@ -423,14 +451,19 @@ def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = 
     children = []
     handles = []
     try:
-        for name, command in [("gateway", [str(ROOT / "bin/gateway")])]:
+        services = []
+        if agent_env is not None:
+            services.append(("personal-assistant-agent", agent_env, int(agent_env["STS_AGENT_ADDRESS"].rsplit(":", 1)[1])))
+        services.append(("gateway", gateway_env, gateway_port))
+        for name, service_env, service_port in services:
+            command = [str(ROOT / "bin" / name)]
             path = logs / f"{name}-{time.time_ns()}.log"
             handle = path.open("x")
             path.chmod(0o600)
             handles.append(handle)
-            children.append(subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+            children.append(subprocess.Popen(command, cwd=ROOT, env=service_env, stdin=subprocess.DEVNULL,
                                              stdout=handle, stderr=handle, start_new_session=True))
-            wait_ready(children, gateway_port)
+            wait_ready(children, service_port)
             print(f"{name} pronto. Log: {path}", flush=True)
         print("\nAmbiente pronto. Configure o app:")
         host = "IP-DO-MAC" if env["STS_GATEWAY_ADDRESS"].startswith("0.0.0.0") else "127.0.0.1"
@@ -438,7 +471,7 @@ def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = 
         print(f"  Provider: {env['STS_PROVIDER']}")
         print(f"  Token local: {env['STS_DEVELOPMENT_TOKEN']}")
         print("Os MCPs selecionados são mediados pelo LiteLLM local." if selected else "Nenhum MCP selecionado.")
-        print("Ctrl+C encerra o gateway; LiteLLM e bancos permanecem ativos.", flush=True)
+        print("Ctrl+C encerra gateway e agente; LiteLLM e bancos permanecem ativos.", flush=True)
         while True:
             if any(child.poll() is not None for child in children):
                 raise RuntimeError("Um serviço encerrou. O assistente vai parar os demais; consulte logs/dev/.")
@@ -453,9 +486,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Pergunta e valida escolhas sem autenticar, compilar ou iniciar serviços.")
     parser.add_argument("--gateway-port", type=int, default=8080, help="Porta local do gateway (padrão 8080).")
+    parser.add_argument("--agent-mode", choices=["remote", "inprocess"], default="remote", help="Transporte Nova; inprocess permite rollback.")
+    parser.add_argument("--agent-port", type=int, default=8090, help="Porta loopback do agente remoto.")
     parser.add_argument("--mcps", help="Nomes do catálogo separados por vírgula; substitui a seleção interativa de MCPs.")
     args = parser.parse_args()
-    if not 1 <= args.gateway_port <= 65535:
+    if not 1 <= args.gateway_port <= 65535 or not 1 <= args.agent_port <= 65535 or args.agent_port == args.gateway_port:
         parser.error("Use uma porta entre 1 e 65535.")
     print("Nova Voice · assistente de ambiente local")
     nova = choose("Qual ambiente deseja iniciar?", ["Fake — sem microfone/AWS/MCPs", "Nova 2 Sonic — AWS + MCPs opcionais"], 2) == 2
@@ -477,8 +512,10 @@ def main() -> int:
         print("Atenção: o token padrão é previsível. Use outro token para acesso pela rede local.")
     selected = servers(mode, fixtures, args.mcps.split(",") if args.mcps is not None else None)
     env = environment("nova" if nova else "fake", profile, lan, token, selected, args.gateway_port)
+    env["STS_AGENT_MODE"] = args.agent_mode if nova else "inprocess"
+    env["STS_AGENT_ADDRESS"] = f"127.0.0.1:{args.agent_port}"
     env["_STS_AWS_PROFILE"] = profile
-    print(f"\nResumo: provider={env['STS_PROVIDER']}, região=us-east-1, gateway={env['STS_GATEWAY_ADDRESS']}")
+    print(f"\nResumo: provider={env['STS_PROVIDER']}, agent={env['STS_AGENT_MODE']}, região=us-east-1, gateway={env['STS_GATEWAY_ADDRESS']}")
     print(f"MCPs: {', '.join(entry['alias'] for entry in selected) or 'nenhum'}; fixtures={'sim' if fixtures else 'não'}")
     print(f"Bancos persistentes: {ROOT / 'data'}; nenhum dado existente será apagado.")
     if args.dry_run:

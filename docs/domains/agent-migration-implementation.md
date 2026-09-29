@@ -160,3 +160,31 @@ Validação desta retomada aprovada:
 - `git diff --check`.
 
 Não foram executados smoke AWS/LiteLLM, builds Apple ou deploy nesta fase.
+
+
+## Fase 5 — rollout local e Agent Session v1
+
+Estado: implementada na branch `codex/agent-migration-phase5`, para `v0.10.0`.
+O transporte remoto é o padrão; a demonstração fake do supervisor seleciona
+explicitamente in-process. A compatibilidade pública permanece Voice v1.
+
+A mesma suíte agora roda nos modos in-process, remoto e rollback: áudio contínuo,
+barge-in, renovação, confirmação, falha/timeout, dois MCPs reais, replay durável,
+desconexão após mutação e logs sem conteúdo. O teste entre processos executa os
+binários do agente e gateway, a CLI existente e Apple VoiceCore. Realtime é
+simulado localmente; AWS real continua opt-in, conforme o plano.
+
+A revisão corrigiu a exigência indevida de segredo LiteLLM no gateway remoto,
+métricas ausentes nesse modo e expiração de sessão silenciosa sem heartbeat.
+O supervisor inicia agente e gateway com ambientes separados e uma chave
+interna aleatória; `--agent-mode inprocess` exercita o rollback. Essa opção
+permanece durante toda `v0.10.x`; sua remoção pertence à Fase 6.
+
+O gate de acréscimo de p95 foi fixado pelo usuário em **10 ms** para o salto
+local. Metodologia, valores, validações e limites estão no
+[registro de rollout](agent-rollout-validation.md).
+
+A promoção não é uma declaração de validação cloud ou de readiness para rede
+remota: não foram executados inferência Bedrock real, auditoria de Usage/Spend
+em banco ativo, teste em iPhone físico ou deploy. Nenhuma atualização do código
+de produção Apple/CLI foi necessária para a compatibilidade demonstrada.

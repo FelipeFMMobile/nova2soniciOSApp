@@ -9,8 +9,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"stsmodel.local/agentwire"
+	assistant "stsmodel.local/personal-assistant-agent/inprocess"
 	"sync"
 	"testing"
 	"time"
@@ -22,7 +25,7 @@ import (
 
 func testConfig() config.Config {
 	prompt, _ := filepath.Abs("../../../../personal-assistant-agent/prompts/system.md")
-	return config.Config{Environment: "development", Provider: "fake", AgentPromptFile: prompt, MCPBackend: "stdio", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, TurnTimeout: 2 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}
+	return config.Config{AgentMode: "inprocess", Environment: "development", Provider: "fake", AgentPromptFile: prompt, MCPBackend: "stdio", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, TurnTimeout: 2 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}
 }
 
 func setup(t *testing.T, cfg config.Config) (*Server, *httptest.Server, string) {
@@ -30,6 +33,32 @@ func setup(t *testing.T, cfg config.Config) (*Server, *httptest.Server, string) 
 	s, err := New(cfg, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if os.Getenv("STS_TEST_AGENT_MODE") == "remote" && cfg.AgentMode != "remote" {
+		agentCfg := s.cfg.Agent()
+		handler, err := agentwire.NewHandler(agentwire.ServerConfig{AgentID: "personal-assistant", Token: "parity-token", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 30 * time.Second, MaxSessions: 16}, parityFactory(func(ctx context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
+			factory, err := assistant.New(agentCfg, s.logger, assistant.Hooks{}, s.toolFactory)
+			if err != nil {
+				return nil, err
+			}
+			return factory.Open(ctx, start)
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		remote := httptest.NewServer(handler)
+		t.Cleanup(remote.Close)
+		_ = s.Close(context.Background())
+		remoteCfg := cfg
+		remoteCfg.AgentMode = "remote"
+		remoteCfg.AgentPromptFile, remoteCfg.LiteLLMURL, remoteCfg.LiteLLMAPIKey, remoteCfg.LiteLLMModel = "", "", "", ""
+		remoteCfg.MCPContextSecret, remoteCfg.MCPCommand, remoteCfg.MCPEvidencePath, remoteCfg.MCPBackend = "", "", "", ""
+		remoteCfg.MCPServers, remoteCfg.LiteLLMServers, remoteCfg.MCPArgs, remoteCfg.MCPAllowedTools = nil, nil, nil, nil
+		remoteCfg.AgentCatalog = []agentwire.Endpoint{{AgentID: "personal-assistant", URL: "ws" + strings.TrimPrefix(remote.URL, "http") + "/v1/session", Token: "parity-token"}}
+		s, err = New(remoteCfg, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	h := httptest.NewServer(s)
 	t.Cleanup(func() {

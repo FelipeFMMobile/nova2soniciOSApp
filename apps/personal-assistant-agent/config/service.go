@@ -83,7 +83,7 @@ func LoadService() (Service, error) {
 		},
 	}
 	if !agentwire.IsLoopbackAddress(service.Address) {
-		return Service{}, errors.New("Agent Session v1alpha1 must listen on loopback")
+		return Service{}, errors.New("Agent Session v1 must listen on loopback")
 	}
 	if service.Token == "" || len(service.Token) > 4096 {
 		return Service{}, errors.New("STS_AGENT_TOKEN is required")

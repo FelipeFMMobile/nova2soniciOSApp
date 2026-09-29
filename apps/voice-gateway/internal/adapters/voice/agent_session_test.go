@@ -31,8 +31,8 @@ func TestVoiceHandlerUsesRemoteAgentSession(t *testing.T) {
 	cfg.AgentPromptFile = ""
 	cfg.MCPBackend = ""
 	cfg.DefaultAgentID = "personal-assistant"
-	cfg.AgentCatalog = []agentwire.Endpoint{{AgentID: "personal-assistant", URL: "ws" + strings.TrimPrefix(remote.URL, "http") + "/v1alpha1/session", Token: "internal-token"}}
-	_, _, url := setup(t, cfg)
+	cfg.AgentCatalog = []agentwire.Endpoint{{AgentID: "personal-assistant", URL: "ws" + strings.TrimPrefix(remote.URL, "http") + "/v1/session", Token: "internal-token"}}
+	s, _, url := setup(t, cfg)
 	c := dial(t, url, "")
 	send(t, c, protocol.Event{Type: protocol.SessionStart, Provider: "fake", RequestID: "remote-contract"})
 	ready := until(t, c, protocol.SessionReady)
@@ -45,6 +45,11 @@ func TestVoiceHandlerUsesRemoteAgentSession(t *testing.T) {
 	send(t, c, protocol.Event{Type: protocol.AudioAppend, SessionID: ready.SessionID, TurnID: "turn-remote", Sequence: 1, SampleRate: 16000, Audio: base64.StdEncoding.EncodeToString(pcm)})
 	if command := <-agent.commands; command.Type != agentwire.InputAudio || command.TurnID != "turn-remote" || string(command.Audio) != string(pcm) {
 		t.Fatal(command)
+	}
+	agent.events <- agentwire.AgentEvent{Type: agentwire.TurnCompleted, TurnID: "turn-remote", Metrics: &agentwire.AgentMetrics{FirstAudioMS: 2.5}}
+	until(t, c, protocol.TurnCompleted)
+	if s.metrics.Completed.Load() != 1 || s.metrics.FirstAudioCount.Load() != 1 || s.metrics.FirstAudioMicros.Load() != 2500 {
+		t.Fatal("remote completion metrics not preserved")
 	}
 	send(t, c, protocol.Event{Type: protocol.SessionStop, SessionID: ready.SessionID})
 	if command := <-agent.commands; command.Type != agentwire.InputClose {

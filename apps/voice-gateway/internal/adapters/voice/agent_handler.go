@@ -156,6 +156,19 @@ start:
 			if !ok {
 				return
 			}
+			if s.cfg.AgentMode == "remote" {
+				switch event.Type {
+				case agentwire.TurnCompleted:
+					s.metrics.Completed.Add(1)
+					if event.Metrics != nil && event.Metrics.FirstAudioMS > 0 {
+						s.metrics.recordFirstAudio(time.Duration(event.Metrics.FirstAudioMS * float64(time.Millisecond)))
+					}
+				case agentwire.TurnInterrupted:
+					s.metrics.Interrupted.Add(1)
+				case agentwire.AgentError:
+					s.metrics.Errors.Add(1)
+				}
+			}
 			voiceEvent, err := voiceEventFromAgent(event)
 			if err != nil {
 				_ = sendError("provider_failed", "agent returned an invalid event")

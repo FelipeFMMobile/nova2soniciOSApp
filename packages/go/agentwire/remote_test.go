@@ -43,7 +43,7 @@ func (s *recordingSession) Close() error {
 }
 
 func endpointFor(server *httptest.Server, id, token string) Endpoint {
-	return Endpoint{AgentID: id, URL: "ws" + strings.TrimPrefix(server.URL, "http") + "/v1alpha1/session", Token: token}
+	return Endpoint{AgentID: id, URL: "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/session", Token: token}
 }
 
 func testAgentServer(t *testing.T, id, token string) (*httptest.Server, *recordingFactory) {
@@ -225,5 +225,41 @@ func TestRemoteFactoryRejectsProofForgedFromReceivedBearer(t *testing.T) {
 	}
 	if bearer := <-observed; bearer == "secret-key" || bearer == "" {
 		t.Fatal("server proof key exposed or missing client credential")
+	}
+}
+
+func TestRemoteHeartbeatPreservesQuietSession(t *testing.T) {
+	factory := &recordingFactory{starts: make(chan AgentSessionStart, 1)}
+	handler, err := NewHandler(ServerConfig{AgentID: "quiet", Token: "token", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 150 * time.Millisecond, MaxSessions: 1}, factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	remote, err := NewRemoteFactory([]Endpoint{endpointFor(server, "quiet", "token")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := remote.Open(context.Background(), AgentSessionStart{AgentID: "quiet", SessionID: "quiet-session", Provider: "nova"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	<-session.Events()
+	select {
+	case event := <-session.Events():
+		t.Fatalf("quiet session expired despite heartbeat: %+v", event)
+	case <-time.After(450 * time.Millisecond):
+	}
+	if err := session.Send(context.Background(), AgentCommand{Type: InputClose, SessionID: "quiet-session"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-session.Events():
+		if event.Type != AgentSessionClosed {
+			t.Fatal(event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("quiet session did not close")
 	}
 }

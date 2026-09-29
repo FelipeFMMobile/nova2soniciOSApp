@@ -1,8 +1,8 @@
-# Agent Session v1alpha1
+# Agent Session v1
 
-Contrato interno experimental entre `voice-gateway` e aplicações agênticas.
+Contrato interno estável entre `voice-gateway` e aplicações agênticas.
 Cada conexão WebSocket representa exatamente uma sessão e usa somente frames
-JSON de texto. O identificador de protocolo é `agent-session/v1alpha1`; não há
+JSON de texto. O identificador de protocolo é `agent-session/v1`; não há
 downgrade automático.
 
 O gateway escolhe `agentId` e endpoint de um catálogo local confiável; esses
@@ -37,3 +37,27 @@ A chave compartilhada nunca é enviada no upgrade. O bearer derivado não permit
 produzir a prova do servidor. Esse mecanismo não cifra o tráfego nem protege
 contra interceptação ativa com relay; o rollout permanece restrito a loopback
 confiável. Exposição em rede exige TLS/mTLS e revisão do threat model.
+
+## Ciclo de vida e concorrência
+
+`Open` só retorna após autenticação, abertura e aceite da versão e identidade.
+Uma conexão transporta uma sessão; `Events` é ordenado e fechado pelo leitor,
+unca pelo consumidor. `Send` serializa escritas; `Close` é idempotente, interrompe
+I/O e aguarda o leitor. Filas cheias aplicam backpressure; não há descarte de PCM
+nem replay automático. Cada escrita possui deadline de no máximo cinco segundos
+no cliente; o servidor aplica seus limites configurados e no máximo 32 sessões.
+
+O servidor envia ping a cada um terço de seu idle timeout; pong renova esse prazo.
+Uma sessão silenciosa continua válida enquanto o transporte responder. Fechamento
+normal produz `agent.session.closed` antes do close frame. Desconexão inesperada
+produz `agent_disconnected`; mensagem inválida produz `agent_protocol_error`, e
+ambas encerram o stream. A reconexão cria uma sessão nova; não retoma áudio.
+
+O agente valida sequência crescente contígua a partir de 1, turnos não reutilizados
+e associação de commit/cancelamento. Voice v1 limita cada entrada a 32.000 bytes;
+o envelope interno aceita até 128 KiB, dentro do limite total de 256 KiB. O turno
+semântico e as políticas de confirmação permanecem responsabilidade do agente.
+
+`agent-session/v1alpha1` não é negociado por estes binários. Para rollback use
+`inprocess` com o conjunto `v0.10.x`, ou reverta gateway e agente juntos para
+`v0.9.0`; misturar versões do transporte falha antes de aceitar áudio.

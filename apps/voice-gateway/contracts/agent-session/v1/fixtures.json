@@ -1,0 +1,337 @@
+{
+  "valid": [
+    {
+      "name": "open",
+      "phase": "open",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.open",
+        "agentId": "personal-assistant",
+        "start": {
+          "sessionId": "session-1",
+          "requestId": "request-1",
+          "agentId": "personal-assistant",
+          "provider": "nova"
+        }
+      }
+    },
+    {
+      "name": "accepted",
+      "phase": "accepted",
+      "agentId": "personal-assistant",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.accepted",
+        "agentId": "personal-assistant"
+      }
+    },
+    {
+      "name": "audio",
+      "phase": "command",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.command",
+        "command": {
+          "type": "input.audio",
+          "sessionId": "session-1",
+          "turnId": "turn-1",
+          "sequence": 1,
+          "audio": "AAA="
+        }
+      }
+    },
+    {
+      "name": "confirmation",
+      "phase": "command",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.command",
+        "command": {
+          "type": "input.confirmation",
+          "sessionId": "session-1",
+          "operationId": "operation-1",
+          "approved": true
+        }
+      }
+    },
+    {
+      "name": "ready",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "agent.session.ready",
+          "provider": "nova",
+          "state": "idle"
+        }
+      }
+    },
+    {
+      "name": "audio output",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "output.audio",
+          "turnId": "turn-1",
+          "sequence": 1,
+          "audio": "AAA=",
+          "sampleRate": 24000
+        }
+      }
+    },
+    {
+      "name": "recoverable error",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "agent.error",
+          "code": "provider_unavailable",
+          "message": "provider unavailable"
+        }
+      }
+    },
+    {
+      "name": "input.commit",
+      "phase": "command",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.command",
+        "command": {
+          "type": "input.commit",
+          "sessionId": "session-1",
+          "turnId": "turn-1"
+        }
+      }
+    },
+    {
+      "name": "input.cancel",
+      "phase": "command",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.command",
+        "command": {
+          "type": "input.cancel",
+          "sessionId": "session-1",
+          "turnId": "turn-1"
+        }
+      }
+    },
+    {
+      "name": "input.close",
+      "phase": "command",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.command",
+        "command": {
+          "type": "input.close",
+          "sessionId": "session-1"
+        }
+      }
+    },
+    {
+      "name": "agent.session.state",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "agent.session.state",
+          "state": "idle"
+        }
+      }
+    },
+    {
+      "name": "agent.session.renewed",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "agent.session.renewed",
+          "state": "idle",
+          "provider": "nova"
+        }
+      }
+    },
+    {
+      "name": "agent.session.closed",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "agent.session.closed",
+          "state": "closed"
+        }
+      }
+    },
+    {
+      "name": "output.transcript",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "output.transcript",
+          "turnId": "turn-1",
+          "text": "synthetic-text",
+          "role": "USER",
+          "stage": "final"
+        }
+      }
+    },
+    {
+      "name": "turn.started",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "turn.started",
+          "turnId": "turn-1"
+        }
+      }
+    },
+    {
+      "name": "turn.completed",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "turn.completed",
+          "turnId": "turn-1"
+        }
+      }
+    },
+    {
+      "name": "turn.interrupted",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "turn.interrupted",
+          "turnId": "turn-1"
+        }
+      }
+    },
+    {
+      "name": "tool.started",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "tool.started",
+          "turnId": "turn-1",
+          "tool": {
+            "operationId": "op-1",
+            "name": "notes.delete"
+          }
+        }
+      }
+    },
+    {
+      "name": "tool.result",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "tool.result",
+          "turnId": "turn-1",
+          "tool": {
+            "operationId": "op-1",
+            "name": "notes.delete"
+          }
+        }
+      }
+    },
+    {
+      "name": "tool.confirmation",
+      "phase": "event",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.event",
+        "event": {
+          "type": "tool.confirmation",
+          "turnId": "turn-1",
+          "tool": {
+            "operationId": "op-1",
+            "name": "notes.delete"
+          }
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong protocol",
+      "phase": "decode",
+      "message": {
+        "protocol": "agent-session/v2",
+        "kind": "session.open"
+      }
+    },
+    {
+      "name": "unknown field",
+      "phase": "decode",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.open",
+        "unknown": true
+      }
+    },
+    {
+      "name": "orphan audio",
+      "phase": "command",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.command",
+        "command": {
+          "type": "input.audio",
+          "sessionId": "other-session",
+          "turnId": "turn-1",
+          "sequence": 1,
+          "audio": "AAA="
+        }
+      }
+    },
+    {
+      "name": "zero sequence",
+      "phase": "command",
+      "sessionId": "session-1",
+      "message": {
+        "protocol": "agent-session/v1",
+        "kind": "session.command",
+        "command": {
+          "type": "input.audio",
+          "sessionId": "session-1",
+          "turnId": "turn-1",
+          "audio": "AAA="
+        }
+      }
+    },
+    {
+      "name": "alpha not negotiated",
+      "phase": "decode",
+      "message": {
+        "protocol": "agent-session/v1alpha1",
+        "kind": "session.open"
+      }
+    }
+  ]
+}

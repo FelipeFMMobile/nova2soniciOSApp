@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	Protocol          = "agent-session/v1alpha1"
+	Protocol          = "agent-session/v1"
 	OpenSession       = "session.open"
 	SessionAccepted   = "session.accepted"
 	SessionCommand    = "session.command"

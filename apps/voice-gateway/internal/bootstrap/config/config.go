@@ -70,7 +70,7 @@ func Load() (Config, error) {
 		GatewayAddress:    env("STS_GATEWAY_ADDRESS", "127.0.0.1:8080"),
 		DevelopmentToken:  os.Getenv("STS_DEVELOPMENT_TOKEN"),
 		Provider:          env("STS_PROVIDER", "fake"),
-		AgentMode:         env("STS_AGENT_MODE", "inprocess"),
+		AgentMode:         env("STS_AGENT_MODE", "remote"),
 		DefaultAgentID:    env("STS_DEFAULT_AGENT_ID", "personal-assistant"),
 		AgentPromptFile:   os.Getenv("STS_AGENT_PROMPT_FILE"),
 		NovaMaxSessionAge: duration("STS_NOVA_MAX_SESSION_AGE", 7*time.Minute+30*time.Second),

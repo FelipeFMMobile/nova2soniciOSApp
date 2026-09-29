@@ -160,7 +160,7 @@ func StartGateway(t *testing.T) *Gateway {
 	addr := ln.Addr().String()
 	ln.Close()
 	cmd := exec.Command(Binary("gateway"))
-	cmd.Env = append(os.Environ(), "STS_GATEWAY_ADDRESS="+addr)
+	cmd.Env = append(os.Environ(), "STS_GATEWAY_ADDRESS="+addr, "STS_AGENT_MODE=inprocess")
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

@@ -92,7 +92,7 @@ type Server struct {
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if cfg.AgentMode == "" {
-		cfg.AgentMode = "inprocess"
+		cfg.AgentMode = "remote"
 	}
 	if cfg.DefaultAgentID == "" {
 		cfg.DefaultAgentID = "personal-assistant"
@@ -112,7 +112,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if cfg.MCPTimeout <= 0 {
 		return nil, fmt.Errorf("MCP timeout must be positive")
 	}
-	if cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || cfg.LiteLLMModel == "" || cfg.NovaMaxSessionAge <= 0) {
+	if cfg.AgentMode == "inprocess" && cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || cfg.LiteLLMModel == "" || cfg.NovaMaxSessionAge <= 0) {
 		return nil, fmt.Errorf("Nova requires LiteLLM configuration and positive session age")
 	}
 	if cfg.MaxSessions <= 0 || cfg.MaxEventBytes <= 0 || cfg.ReadTimeout <= 0 || cfg.WriteTimeout <= 0 || cfg.IdleTimeout < time.Millisecond || cfg.TurnTimeout <= 0 {
