@@ -1,5 +1,8 @@
 # Plano de migração para aplicações modulares
 
+Próxima proposta, ainda não implementada: [separação entre gateway de voz e
+aplicação agêntica](agent-migration-plan.md).
+
 Estado: migração implementada na branch `codex/modular-domain-migration`.
 Fases 1–4 executadas; fase 5 entrega catálogo e imagens por app, mantendo stdio
 na composição LiteLLM. Transporte MCP remoto segue fora do rollout atual.
