@@ -10,6 +10,13 @@ import (
 	"stsmodel.local/voicewire"
 )
 
+type output struct {
+	event  protocol.Event
+	turnID string
+	done   bool
+	err    error
+}
+
 func (s *Server) runFake(ctx context.Context, in <-chan inbound, sessionID string, write func(protocol.Event) error) {
 	conversation := session.New()
 	conversation.ID = sessionID

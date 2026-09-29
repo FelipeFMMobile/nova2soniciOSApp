@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"stsmodel.local/voice-gateway/internal/conversation"
+	session "stsmodel.local/agentwire"
 	"stsmodel.local/voicewire"
 )
 

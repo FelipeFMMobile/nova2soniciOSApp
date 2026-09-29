@@ -24,8 +24,8 @@ trabalhos posteriores. O usuário pode ampliar esse escopo explicitamente.
 5. Projete aplicações, módulos internos, propriedade de dados, contratos e
    dependências permitidas. Diferencie biblioteca técnica, módulo e processo.
    Contratos e testes de conformidade pertencem à aplicação fornecedora;
-   perfis e testes de autorização pertencem ao gateway, com configuração em
-   `apps/voice-gateway/config/integrations/` e segredos via ambiente. A raiz
+   perfis e testes de autorização pertencem à aplicação agêntica, com configuração em
+   `apps/personal-assistant-agent/config/integrations/` e segredos via ambiente. A raiz
    mantém apenas testes de integração entre aplicações, sem pastas centrais
    de contratos ou perfis. Não transforme cada pacote técnico em domínio ou
    cada domínio em serviço.

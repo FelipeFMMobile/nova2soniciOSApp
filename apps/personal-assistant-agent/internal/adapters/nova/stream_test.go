@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"stsmodel.local/voice-gateway/internal/adapters/provider"
+	"stsmodel.local/agentwire"
 )
 
 func TestLiteLLMHandshakeHeadersToolsAndEvents(t *testing.T) {
@@ -46,7 +46,7 @@ func TestLiteLLMHandshakeHeadersToolsAndEvents(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	s, err := Open(ctx, server.URL, "service-key", "nova-sonic", "session-123", "request-456", []HistoryMessage{{Role: "USER", Content: "antes"}}, []provider.ToolSpec{{Name: "notes_list", Description: "lista", Parameters: []byte(`{"type":"object"}`)}})
+	s, err := Open(ctx, server.URL, "service-key", "nova-sonic", "session-123", "request-456", "prompt de teste", []HistoryMessage{{Role: "USER", Content: "antes"}}, []agentwire.ToolSpec{{Name: "notes_list", Description: "lista", Parameters: []byte(`{"type":"object"}`)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestLiteLLMStartupRejectionIsRedacted(t *testing.T) {
 		_ = c.WriteJSON(map[string]any{"type": "error", "error": map[string]any{"message": "secret details"}})
 	}))
 	defer server.Close()
-	if _, err := Open(context.Background(), server.URL, "key", "nova-sonic", "session", "request", nil, nil); err == nil || strings.Contains(err.Error(), "secret") {
+	if _, err := Open(context.Background(), server.URL, "key", "nova-sonic", "session", "request", "prompt de teste", nil, nil); err == nil || strings.Contains(err.Error(), "secret") {
 		t.Fatal(err)
 	}
 }

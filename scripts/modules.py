@@ -35,7 +35,14 @@ def boundaries():
                     owner = imp.split('/')[1]
                     if not source.is_relative_to(ROOT / 'apps' / owner):
                         raise RuntimeError(f'Cross-application import: {source}: {imp}')
-                if area == 'packages/go' and any(imp.startswith('stsmodel.local/' + app + '/') for app in ['voice-gateway', 'mcp-notes', 'mcp-agenda', 'voice-client']):
+                if area == 'apps' and imp.startswith('stsmodel.local/personal-assistant-agent') and source.is_relative_to(ROOT / 'apps/voice-gateway'):
+                    temporary_adapter = {
+                        ROOT / 'apps/voice-gateway/internal/adapters/voice/server.go',
+                        ROOT / 'apps/voice-gateway/internal/bootstrap/config/config.go',
+                    }
+                    if source not in temporary_adapter:
+                        raise RuntimeError(f'Unexpected gateway dependency on agent app: {source}: {imp}')
+                if area == 'packages/go' and any(imp.startswith('stsmodel.local/' + app + '/') for app in ['voice-gateway', 'personal-assistant-agent', 'mcp-notes', 'mcp-agenda', 'voice-client']):
                     raise RuntimeError(f'Technical library imports app: {source}')
     print('Application boundaries OK', flush=True)
 

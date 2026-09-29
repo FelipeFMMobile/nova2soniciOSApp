@@ -48,7 +48,7 @@ def yes(question: str, default: bool = False) -> bool:
 
 
 def integration_directories() -> list[Path]:
-    directories = [ROOT / "apps/voice-gateway/config/integrations"]
+    directories = [ROOT / "apps/personal-assistant-agent/config/integrations"]
     external = os.environ.get("STS_INTEGRATIONS_DIR")
     if external:
         directories.append(Path(external))
@@ -103,7 +103,8 @@ def environment(provider: str, profile: str, lan: bool, token: str, selected: li
     env.update(STS_PROVIDER=provider, STS_ENV="development",
                STS_GATEWAY_ADDRESS=f"0.0.0.0:{gateway_port}" if lan else f"127.0.0.1:{gateway_port}",
                STS_DEVELOPMENT_TOKEN=token, STS_LITELLM_URL=LITELLM_URL,
-               STS_LITELLM_REALTIME_MODEL="nova-sonic")
+               STS_LITELLM_REALTIME_MODEL="nova-sonic",
+               STS_AGENT_PROMPT_FILE=str(ROOT / "apps/personal-assistant-agent/prompts/system.md"))
     if integrations_dir:
         env["STS_INTEGRATIONS_DIR"] = integrations_dir
     env.setdefault("GOCACHE", "/private/tmp/sts-go-cache")

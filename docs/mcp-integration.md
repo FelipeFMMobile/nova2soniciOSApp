@@ -1,6 +1,6 @@
 # Integração MCP
 
-Notes e Agenda são servidores MCP stdio executados pelo LiteLLM. O gateway Go
+Notes e Agenda são servidores MCP stdio executados pelo LiteLLM. O agente Go
 descobre ferramentas, converte seus JSON Schemas para function tools do
 Realtime e resolve as chamadas devolvidas pelo Nova.
 
@@ -21,10 +21,10 @@ O caminho recomendado é `make dev`; detalhes de LiteLLM estão no
 
 Os contratos publicados pertencem a `apps/mcp-notes/contracts/v1/` e
 `apps/mcp-agenda/contracts/v1/`. O gateway mantém suas decisões confiáveis em
-`apps/voice-gateway/config/integrations/`: `profile.json` contém políticas e
+`apps/personal-assistant-agent/config/integrations/`: `profile.json` contém políticas e
 frases, `runtime.json` descreve o processo e seu identificador no LiteLLM.
 
-Para uma app nova sem recompilar o gateway, adicione um perfil JSON no diretório
+Para uma app nova sem alterar regras do gateway, adicione um perfil JSON no diretório
 apontado por `STS_INTEGRATIONS_DIR` (também aceita subdiretórios). Os perfis
 embutidos não podem ser sobrescritos. Configure o servidor em `STS_MCP_SERVERS`
 ou `STS_LITELLM_MCP_SERVERS`; cada ferramenta precisa de perfil e política

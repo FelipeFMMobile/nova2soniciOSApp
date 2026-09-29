@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("STS_ENV", "development")
@@ -37,6 +40,11 @@ func TestNovaRequiresLiteLLM(t *testing.T) {
 	}
 	t.Setenv("STS_LITELLM_URL", "http://127.0.0.1:4000")
 	t.Setenv("STS_LITELLM_API_KEY", "service-key")
+	prompt, err := filepath.Abs("../../../../personal-assistant-agent/prompts/system.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("STS_AGENT_PROMPT_FILE", prompt)
 	cfg, err := Load()
 	if err != nil || cfg.LiteLLMModel != "nova-sonic" {
 		t.Fatal(cfg, err)
@@ -122,11 +130,6 @@ func TestExplicitMultipleServers(t *testing.T) {
 	t.Setenv("STS_MCP_COMMAND", "/absolute/mcp-notes")
 	if _, err = Load(); err == nil {
 		t.Fatal("ambiguous configuration")
-	}
-	t.Setenv("STS_MCP_COMMAND", "")
-	t.Setenv("STS_MCP_SERVERS", `[{"alias":"a","command":"/bin/a","allowed_tools":["x"]}]`)
-	if _, err = Load(); err == nil {
-		t.Fatal("missing host policy")
 	}
 }
 

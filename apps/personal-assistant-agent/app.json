@@ -1,0 +1,20 @@
+{
+  "name": "personal-assistant-agent",
+  "language": "go",
+  "build": [
+    "go",
+    "build",
+    "-trimpath",
+    "-o",
+    "../../bin/personal-assistant-agent",
+    "./cmd/agent"
+  ],
+  "test": [
+    "go",
+    "test",
+    "./..."
+  ],
+  "run": [
+    "../../bin/personal-assistant-agent"
+  ]
+}

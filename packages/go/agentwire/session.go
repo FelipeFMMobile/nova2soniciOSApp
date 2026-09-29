@@ -1,4 +1,7 @@
-package ports
+// Package agentwire defines the transport-neutral in-process AgentSession
+// contract. Its types are shared by the public voice edge and agent adapters;
+// business policy remains owned by the agent application.
+package agentwire
 
 import (
 	"context"
@@ -6,6 +9,12 @@ import (
 )
 
 const (
+	Idle       = "idle"
+	Listening  = "listening"
+	Responding = "responding"
+	Closed     = "closed"
+	MaxTurns   = 128
+
 	InputAudio        = "input.audio"
 	InputCommit       = "input.commit"
 	InputCancel       = "input.cancel"
@@ -26,6 +35,12 @@ const (
 	ToolConfirmation    = "tool.confirmation"
 	AgentError          = "agent.error"
 )
+
+type ToolSpec struct {
+	Name        string
+	Description string
+	Parameters  json.RawMessage
+}
 
 type AgentSessionStart struct {
 	SessionID string

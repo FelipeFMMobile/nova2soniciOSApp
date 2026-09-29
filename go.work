@@ -3,10 +3,12 @@ go 1.27.0
 use (
 	.
 	./apps/voice-gateway
+	./apps/personal-assistant-agent
 	./apps/voice-client
 	./apps/mcp-notes
 	./apps/mcp-agenda
 	./packages/go/mcpwire
+	./packages/go/agentwire
 	./packages/go/voicewire
 	./packages/go/audio
 	./packages/go/testkit

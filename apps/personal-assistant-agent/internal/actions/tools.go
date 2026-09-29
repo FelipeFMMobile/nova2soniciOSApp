@@ -13,9 +13,9 @@ import (
 	"unicode"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	agentwire "stsmodel.local/agentwire"
 	"stsmodel.local/mcpwire"
-	"stsmodel.local/voice-gateway/config/integrations"
-	provider "stsmodel.local/voice-gateway/internal/ports"
+	"stsmodel.local/personal-assistant-agent/config/integrations"
 	"stsmodel.local/voicewire"
 )
 
@@ -43,7 +43,7 @@ type Session struct {
 	intentText string
 	backend    Backend
 	tools      map[string]binding
-	Specs      []provider.ToolSpec
+	Specs      []agentwire.ToolSpec
 	namespace  string
 	Pending    *Pending
 	seen       map[string]string
@@ -105,7 +105,7 @@ func New(ctx context.Context, backend Backend, allowed []string, namespace strin
 		if policy == mcp.ConfirmLater {
 			description += " Esta ação exige confirmação do usuário em um turno posterior. Se receber confirmation_required, peça " + profile.ConfirmationPhrase + ", depois chame novamente com os mesmos argumentos."
 		}
-		s.Specs = append(s.Specs, provider.ToolSpec{Name: name, Description: description, Parameters: append(json.RawMessage(nil), tool.InputSchema...)})
+		s.Specs = append(s.Specs, agentwire.ToolSpec{Name: name, Description: description, Parameters: append(json.RawMessage(nil), tool.InputSchema...)})
 	}
 	if len(s.Specs) == 0 {
 		return nil, errors.New("no allowed MCP tools discovered")

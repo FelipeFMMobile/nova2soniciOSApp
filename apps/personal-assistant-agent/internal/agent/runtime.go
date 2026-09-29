@@ -1,22 +1,66 @@
-package gateway
+package agent
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
+	"stsmodel.local/agentwire"
 	"stsmodel.local/mcpwire"
-	"stsmodel.local/voice-gateway/internal/actions"
-	"stsmodel.local/voice-gateway/internal/adapters/provider/nova"
-	"stsmodel.local/voice-gateway/internal/conversation"
+	agentconfig "stsmodel.local/personal-assistant-agent/config"
+	"stsmodel.local/personal-assistant-agent/internal/actions"
+	"stsmodel.local/personal-assistant-agent/internal/adapters/nova"
 	"stsmodel.local/voicewire"
 )
 
-// runNova owns all Nova state and writes. Microphone input remains live while
+type Input struct {
+	Event protocol.Event
+	Err   error
+}
+
+type Hooks struct {
+	Error       func()
+	Completed   func()
+	Interrupted func()
+	FirstAudio  func(time.Duration)
+}
+
+type ToolFactory func(context.Context) (orchestrator.Backend, func(), error)
+
+type Runtime struct {
+	cfg         agentconfig.Config
+	prompt      string
+	logger      *slog.Logger
+	hooks       Hooks
+	toolFactory ToolFactory
+}
+
+func New(cfg agentconfig.Config, logger *slog.Logger, hooks Hooks, toolFactory ToolFactory) (*Runtime, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	prompt, err := agentconfig.LoadPrompt(cfg.PromptFile)
+	if err != nil {
+		return nil, err
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Runtime{cfg: cfg, prompt: prompt, logger: logger, hooks: hooks, toolFactory: toolFactory}, nil
+}
+
+func call(fn func()) {
+	if fn != nil {
+		fn()
+	}
+}
+
+// Run owns all Nova state and writes. Microphone input remains live while
 // inference responds; only the private stream reader runs asynchronously.
-func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, namespace string, write func(protocol.Event) error) {
+func (s *Runtime) Run(ctx context.Context, in <-chan Input, sessionID, namespace string, write func(protocol.Event) error) {
 	sendError := func(code, message string) {
-		s.metrics.Errors.Add(1)
+		call(s.hooks.Error)
 		_ = write(protocol.Event{Type: protocol.Error, Code: code, Message: message})
 	}
 	tools, err := s.openTools(ctx, namespace, sessionID)
@@ -27,14 +71,14 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 	if tools != nil {
 		defer tools.Close()
 	}
-	stream, err := nova.Open(ctx, s.cfg.LiteLLMURL, s.cfg.LiteLLMAPIKey, s.cfg.LiteLLMModel, sessionID, namespace, nil, tools.specs())
+	stream, err := nova.Open(ctx, s.cfg.LiteLLMURL, s.cfg.LiteLLMAPIKey, s.cfg.LiteLLMModel, sessionID, namespace, s.prompt, nil, tools.specs())
 	if err != nil {
 		sendError("provider_unavailable", err.Error())
 		return
 	}
 	defer func() { stream.Close() }()
 	mapper := nova.NewMapper(nil)
-	if write(protocol.Event{Type: protocol.SessionReady, Provider: "nova", State: session.Idle}) != nil {
+	if write(protocol.Event{Type: protocol.SessionReady, Provider: "nova", State: agentwire.Idle}) != nil {
 		return
 	}
 	inputID := ""
@@ -57,20 +101,22 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 	completedUserTurn := ""
 	emit := func(events []protocol.Event) bool {
 		for _, event := range events {
-			if event.Type == protocol.SessionState && event.State == session.Responding && turnTimeout == nil {
+			if event.Type == protocol.SessionState && event.State == agentwire.Responding && turnTimeout == nil {
 				turnTimer.Reset(s.cfg.TurnTimeout)
 				turnTimeout = turnTimer.C
 			}
 			if event.Type == protocol.AudioOutput && event.Sequence == 1 {
-				s.metrics.recordFirstAudio(time.Duration(mapper.FirstAudioMicros()) * time.Microsecond)
+				if s.hooks.FirstAudio != nil {
+					s.hooks.FirstAudio(time.Duration(mapper.FirstAudioMicros()) * time.Microsecond)
+				}
 			}
 			if event.Type == protocol.TurnInterrupted {
-				s.metrics.Interrupted.Add(1)
+				call(s.hooks.Interrupted)
 				turnTimer.Stop()
 				turnTimeout = nil
 			}
 			if event.Type == protocol.TurnCompleted {
-				s.metrics.Completed.Add(1)
+				call(s.hooks.Completed)
 				turnTimer.Stop()
 				turnTimeout = nil
 				s.logger.Info("nova turn completed", "turn_id", event.TurnID, "first_audio_ms", event.Metrics.FirstAudioMS, "duration_ms", event.Metrics.DurationMS)
@@ -88,7 +134,7 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 			tools.session.Interrupt()
 			clear(tools.staged)
 		}
-		replacement, err := nova.Open(ctx, s.cfg.LiteLLMURL, s.cfg.LiteLLMAPIKey, s.cfg.LiteLLMModel, sessionID, namespace, history, tools.specs())
+		replacement, err := nova.Open(ctx, s.cfg.LiteLLMURL, s.cfg.LiteLLMAPIKey, s.cfg.LiteLLMModel, sessionID, namespace, s.prompt, history, tools.specs())
 		if err != nil {
 			sendError("provider_unavailable", "Nova session renewal failed")
 			return false
@@ -97,7 +143,7 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 		mapper = nova.NewMapper(history)
 		openedAt = time.Now()
 		renew.Reset(s.cfg.NovaMaxSessionAge)
-		return write(protocol.Event{Type: protocol.SessionRenewed, Provider: "nova", State: session.Idle}) == nil
+		return write(protocol.Event{Type: protocol.SessionRenewed, Provider: "nova", State: agentwire.Idle}) == nil
 	}
 	for {
 		select {
@@ -118,11 +164,11 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 				renew.Reset(10 * time.Second)
 				continue
 			}
-			if mapper.State != session.Idle && time.Since(openedAt) < 7*time.Minute+50*time.Second {
+			if mapper.State != agentwire.Idle && time.Since(openedAt) < 7*time.Minute+50*time.Second {
 				renew.Reset(10 * time.Second)
 				continue
 			}
-			if mapper.State != session.Idle && !emit(mapper.Interrupt()) {
+			if mapper.State != agentwire.Idle && !emit(mapper.Interrupt()) {
 				return
 			}
 			if !rotate() {
@@ -132,11 +178,11 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 			if !ok {
 				return
 			}
-			if input.err != nil {
-				sendError("invalid_event", input.err.Error())
+			if input.Err != nil {
+				sendError("invalid_event", input.Err.Error())
 				continue
 			}
-			e := input.event
+			e := input.Event
 			if e.SessionID != sessionID {
 				sendError("session_mismatch", "sessionId does not match this connection")
 				continue
@@ -144,7 +190,7 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 			switch e.Type {
 			case protocol.AudioAppend:
 				if e.TurnID != inputID {
-					if e.Sequence != 1 || usedInputs[e.TurnID] || len(usedInputs) >= session.MaxTurns {
+					if e.Sequence != 1 || usedInputs[e.TurnID] || len(usedInputs) >= agentwire.MaxTurns {
 						sendError("invalid_audio", "new input requires an unused turnId and sequence 1")
 						continue
 					}
@@ -173,7 +219,7 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 				turnTimer.Reset(s.cfg.TurnTimeout)
 				turnTimeout = turnTimer.C
 			case protocol.TurnCancel:
-				if e.TurnID != mapper.TurnID || mapper.State == session.Idle {
+				if e.TurnID != mapper.TurnID || mapper.State == agentwire.Idle {
 					sendError("invalid_turn", "no matching active turn")
 					continue
 				}
@@ -192,7 +238,7 @@ func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, name
 					return
 				}
 			case protocol.SessionStop:
-				_ = write(protocol.Event{Type: protocol.SessionStopped, State: session.Closed})
+				_ = write(protocol.Event{Type: protocol.SessionStopped, State: agentwire.Closed})
 				return
 			case protocol.ToolConfirm:
 				if tools == nil || !tools.session.Confirm(e.Tool.OperationID, *e.Tool.Approved) {

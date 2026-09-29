@@ -6,42 +6,42 @@ import (
 	"sync"
 	"testing"
 
-	"stsmodel.local/voice-gateway/internal/ports"
+	"stsmodel.local/agentwire"
 	"stsmodel.local/voicewire"
 )
 
 type recordingAgentFactory struct {
-	starts   chan ports.AgentSessionStart
+	starts   chan agentwire.AgentSessionStart
 	sessions chan *recordingAgentSession
 }
 
-func (f *recordingAgentFactory) Open(_ context.Context, start ports.AgentSessionStart) (ports.AgentSession, error) {
-	session := &recordingAgentSession{events: make(chan ports.AgentEvent, 16), commands: make(chan ports.AgentCommand, 16)}
+func (f *recordingAgentFactory) Open(_ context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
+	session := &recordingAgentSession{events: make(chan agentwire.AgentEvent, 16), commands: make(chan agentwire.AgentCommand, 16)}
 	f.starts <- start
 	f.sessions <- session
-	session.events <- ports.AgentEvent{Type: ports.AgentSessionReady, Provider: "fake", State: "idle"}
+	session.events <- agentwire.AgentEvent{Type: agentwire.AgentSessionReady, Provider: "fake", State: "idle"}
 	return session, nil
 }
 
 type recordingAgentSession struct {
-	events    chan ports.AgentEvent
-	commands  chan ports.AgentCommand
+	events    chan agentwire.AgentEvent
+	commands  chan agentwire.AgentCommand
 	closeOnce sync.Once
 }
 
-func (s *recordingAgentSession) Send(_ context.Context, command ports.AgentCommand) error {
+func (s *recordingAgentSession) Send(_ context.Context, command agentwire.AgentCommand) error {
 	s.commands <- command
 	switch command.Type {
-	case ports.InputAudio:
-		s.events <- ports.AgentEvent{Type: ports.TurnStarted, TurnID: command.TurnID}
-		s.events <- ports.AgentEvent{Type: ports.OutputAudio, TurnID: command.TurnID, Sequence: 1, SampleRate: 24000, Audio: []byte{0, 0}}
-	case ports.InputClose:
-		s.events <- ports.AgentEvent{Type: ports.AgentSessionClosed, State: "closed"}
+	case agentwire.InputAudio:
+		s.events <- agentwire.AgentEvent{Type: agentwire.TurnStarted, TurnID: command.TurnID}
+		s.events <- agentwire.AgentEvent{Type: agentwire.OutputAudio, TurnID: command.TurnID, Sequence: 1, SampleRate: 24000, Audio: []byte{0, 0}}
+	case agentwire.InputClose:
+		s.events <- agentwire.AgentEvent{Type: agentwire.AgentSessionClosed, State: "closed"}
 	}
 	return nil
 }
 
-func (s *recordingAgentSession) Events() <-chan ports.AgentEvent { return s.events }
+func (s *recordingAgentSession) Events() <-chan agentwire.AgentEvent { return s.events }
 func (s *recordingAgentSession) Close() error {
 	s.closeOnce.Do(func() { close(s.events) })
 	return nil
@@ -49,7 +49,7 @@ func (s *recordingAgentSession) Close() error {
 
 func TestVoiceHandlerUsesAgentSessionPort(t *testing.T) {
 	s, _, url := setup(t, testConfig())
-	factory := &recordingAgentFactory{starts: make(chan ports.AgentSessionStart, 1), sessions: make(chan *recordingAgentSession, 1)}
+	factory := &recordingAgentFactory{starts: make(chan agentwire.AgentSessionStart, 1), sessions: make(chan *recordingAgentSession, 1)}
 	s.agentFactory = factory
 	c := dial(t, url, "")
 	send(t, c, protocol.Event{Type: protocol.SessionStart, Provider: "fake", RequestID: "port-contract"})
@@ -69,22 +69,22 @@ func TestVoiceHandlerUsesAgentSessionPort(t *testing.T) {
 		t.Fatal("agent PCM was not encoded for Voice v1", err, pcm)
 	}
 	command := <-agent.commands
-	if command.Type != ports.InputAudio || command.SessionID != ready.SessionID || command.TurnID != "turn-1" || command.Sequence != 1 || len(command.Audio) != 4 {
+	if command.Type != agentwire.InputAudio || command.SessionID != ready.SessionID || command.TurnID != "turn-1" || command.Sequence != 1 || len(command.Audio) != 4 {
 		t.Fatal("Voice v1 audio was not decoded for the agent", command)
 	}
 
-	agent.events <- ports.AgentEvent{Type: ports.ToolConfirmation, TurnID: "turn-1", Tool: &ports.AgentTool{OperationID: "operation-1", Name: "notes.delete"}}
+	agent.events <- agentwire.AgentEvent{Type: agentwire.ToolConfirmation, TurnID: "turn-1", Tool: &agentwire.AgentTool{OperationID: "operation-1", Name: "notes.delete"}}
 	until(t, c, protocol.ToolConfirmation)
 	approved := true
 	send(t, c, protocol.Event{Type: protocol.ToolConfirm, SessionID: ready.SessionID, Tool: &protocol.Tool{OperationID: "operation-1", Approved: &approved}})
 	command = <-agent.commands
-	if command.Type != ports.InputConfirmation || command.OperationID != "operation-1" || !command.Approved {
+	if command.Type != agentwire.InputConfirmation || command.OperationID != "operation-1" || !command.Approved {
 		t.Fatal("UI confirmation was not translated", command)
 	}
 
 	send(t, c, protocol.Event{Type: protocol.SessionStop, SessionID: ready.SessionID})
 	until(t, c, protocol.SessionStopped)
-	if command = <-agent.commands; command.Type != ports.InputClose {
+	if command = <-agent.commands; command.Type != agentwire.InputClose {
 		t.Fatal("session close was not translated", command)
 	}
 }

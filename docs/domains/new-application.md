@@ -19,7 +19,7 @@
    ```
 
    Carregue-o via `STS_INTEGRATIONS_DIR` sem recompilar o gateway, ou mantenha-o
-   em `apps/voice-gateway/config/integrations/<nome>/profile.json` para embutir
+   em `apps/personal-assistant-agent/config/integrations/<nome>/profile.json` para embutir
    no build. Perfis adicionais não podem sobrescrever os embutidos. Políticas
    permitidas são read_only, explicit_intent e confirm_later. explicit_intent
    exige exatamente `direct: true` ou `intent_pattern` (regex sobre fala

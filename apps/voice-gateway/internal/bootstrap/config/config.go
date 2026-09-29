@@ -9,9 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"stsmodel.local/mcpwire"
-	"stsmodel.local/voice-gateway/config/integrations"
-	mcpclient "stsmodel.local/voice-gateway/internal/adapters/mcpclient"
+	agentconfig "stsmodel.local/personal-assistant-agent/config"
 	"time"
 )
 
@@ -20,9 +18,10 @@ type Config struct {
 	GatewayAddress    string
 	DevelopmentToken  string
 	Provider          string
+	AgentPromptFile   string
 	NovaMaxSessionAge time.Duration
 	LiteLLMModel      string
-	MCPServers        []mcpclient.ServerConfig
+	MCPServers        []agentconfig.ServerConfig
 	MCPEvidencePath   string
 	MCPCommand        string
 	MCPArgs           []string
@@ -32,7 +31,7 @@ type Config struct {
 	LiteLLMURL        string
 	LiteLLMAPIKey     string
 	MCPContextSecret  string
-	LiteLLMServers    []mcpclient.GatewayServerConfig
+	LiteLLMServers    []agentconfig.GatewayServerConfig
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
@@ -42,10 +41,6 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	profiles, err := integrations.Load()
-	if err != nil {
-		return Config{}, err
-	}
 	for _, key := range []string{"STS_READ_TIMEOUT", "STS_WRITE_TIMEOUT", "STS_IDLE_TIMEOUT", "STS_TURN_TIMEOUT", "STS_NOVA_MAX_SESSION_AGE", "STS_MCP_TIMEOUT"} {
 		if value := os.Getenv(key); value != "" {
 			parsed, err := time.ParseDuration(value)
@@ -68,6 +63,7 @@ func Load() (Config, error) {
 		GatewayAddress:    env("STS_GATEWAY_ADDRESS", "127.0.0.1:8080"),
 		DevelopmentToken:  os.Getenv("STS_DEVELOPMENT_TOKEN"),
 		Provider:          env("STS_PROVIDER", "fake"),
+		AgentPromptFile:   os.Getenv("STS_AGENT_PROMPT_FILE"),
 		NovaMaxSessionAge: duration("STS_NOVA_MAX_SESSION_AGE", 7*time.Minute+30*time.Second),
 		LiteLLMModel:      env("STS_LITELLM_REALTIME_MODEL", "nova-sonic"),
 		MCPCommand:        os.Getenv("STS_MCP_COMMAND"),
@@ -94,18 +90,17 @@ func Load() (Config, error) {
 		if err := json.Unmarshal([]byte(os.Getenv("STS_LITELLM_MCP_SERVERS")), &cfg.LiteLLMServers); err != nil {
 			return Config{}, fmt.Errorf("STS_LITELLM_MCP_SERVERS must be a JSON server array")
 		}
-		if err := mcpclient.ValidateGatewayServers(cfg.LiteLLMServers); err != nil {
-			return Config{}, err
-		}
-		if _, err := mcp.NewEnvelopeCodec(cfg.MCPContextSecret, cfg.LiteLLMServers[0].Alias); err != nil {
-			return Config{}, err
-		}
 		if cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" {
 			return Config{}, fmt.Errorf("LiteLLM URL and API key required")
 		}
 	}
 	if cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || strings.TrimSpace(cfg.LiteLLMModel) == "") {
 		return Config{}, fmt.Errorf("Nova requires LiteLLM URL, API key and realtime model")
+	}
+	if cfg.Provider == "nova" {
+		if _, err := agentconfig.LoadPrompt(cfg.AgentPromptFile); err != nil {
+			return Config{}, err
+		}
 	}
 	if cfg.LiteLLMURL != "" {
 		parsed, err := url.Parse(cfg.LiteLLMURL)
@@ -121,9 +116,6 @@ func Load() (Config, error) {
 		if err := json.Unmarshal([]byte(raw), &cfg.MCPServers); err != nil || len(cfg.MCPServers) == 0 {
 			return Config{}, fmt.Errorf("STS_MCP_SERVERS must be a nonempty JSON server array")
 		}
-		if err := mcpclient.ValidateServers(cfg.MCPServers); err != nil {
-			return Config{}, err
-		}
 	}
 	if raw := os.Getenv("STS_MCP_ARGS"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &cfg.MCPArgs); err != nil {
@@ -135,11 +127,6 @@ func Load() (Config, error) {
 	}
 	for i, name := range cfg.MCPAllowedTools {
 		cfg.MCPAllowedTools[i] = strings.TrimSpace(name)
-		if cfg.MCPCommand != "" {
-			if _, ok := profiles[cfg.MCPAllowedTools[i]]; !ok {
-				return Config{}, fmt.Errorf("missing trusted integration profile for %s", cfg.MCPAllowedTools[i])
-			}
-		}
 	}
 	if cfg.Environment != "development" && cfg.DevelopmentToken == "" {
 		return Config{}, fmt.Errorf("STS_DEVELOPMENT_TOKEN is required outside development")
@@ -162,6 +149,19 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("timeouts must be positive")
 	}
 	return cfg, nil
+}
+
+func (c Config) Agent() agentconfig.Config {
+	return agentconfig.Config{
+		Provider: c.Provider, PromptFile: c.AgentPromptFile,
+		NovaMaxSessionAge: c.NovaMaxSessionAge, LiteLLMModel: c.LiteLLMModel,
+		MCPServers: c.MCPServers, MCPEvidencePath: c.MCPEvidencePath,
+		MCPCommand: c.MCPCommand, MCPArgs: c.MCPArgs, MCPAllowedTools: c.MCPAllowedTools,
+		MCPTimeout: c.MCPTimeout, MCPBackend: c.MCPBackend,
+		LiteLLMURL: c.LiteLLMURL, LiteLLMAPIKey: c.LiteLLMAPIKey,
+		MCPContextSecret: c.MCPContextSecret, LiteLLMServers: c.LiteLLMServers,
+		TurnTimeout: c.TurnTimeout,
+	}
 }
 
 func env(key, fallback string) string {

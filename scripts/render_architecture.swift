@@ -114,7 +114,7 @@ NSBezierPath(rect: NSRect(x: 0, y: 0, width: width, height: height)).fill()
 // Header and external systems.
 text("STS Model — arquitetura modular orientada a domínios", x: 80, y: 44, w: 1250, h: 52,
      size: 38, weight: .bold, align: .left)
-text("Aplicações independentes · contratos junto dos provedores · integrações no gateway",
+text("Aplicações independentes · contratos junto dos provedores · integrações no agente",
      x: 80, y: 102, w: 1500, h: 34, size: 22, align: .left)
 
 box(185, 160, 700, 120, title: "Clientes de voz · SwiftUI e CLI Go",
@@ -129,23 +129,31 @@ rounded(rect(45, 315, 1710, 1235), fill: localFill, stroke: border, radius: 28, 
 text("AMBIENTE LOCAL · MONOREPO POLIGLOTA", x: 75, y: 338, w: 600, h: 36,
      size: 23, weight: .bold, align: .left)
 
-// Voice gateway: a modular monolith with trusted integration configuration.
-rounded(rect(75, 390, 920, 490), fill: gatewayFill,
+// Voice gateway: public transport edge.
+rounded(rect(75, 390, 480, 490), fill: gatewayFill,
         stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 22, width: 2)
-text("APP VOICE-GATEWAY · MONÓLITO MODULAR · GO · :8080", x: 100, y: 413, w: 790, h: 34,
-     size: 22, weight: .bold, align: .left)
-box(110, 470, 385, 125, title: "API de voz",
+text("APP VOICE-GATEWAY · GO · :8080", x: 100, y: 413, w: 420, h: 34,
+     size: 19, weight: .bold, align: .left)
+box(105, 470, 420, 125, title: "API de voz",
     lines: ["HTTP / WebSocket · token local", "contracts/voice/v1"], titleSize: 23, bodySize: 17)
-box(555, 470, 400, 125, title: "Módulo Conversation",
-    lines: ["Sessões, turnos e timeouts", "Streaming e interrupção"], titleSize: 23, bodySize: 18)
-box(110, 645, 385, 155, title: "Módulo Actions",
-    lines: ["Autorização e confirmação", "Resultado desconhecido · retry seguro"], titleSize: 23, bodySize: 17)
-box(555, 645, 400, 155, title: "Portas e adaptadores",
-    lines: ["Realtime / LiteLLM · MCP", "Envelope assinado do host"], titleSize: 23, bodySize: 18)
-rounded(rect(110, 820, 845, 40), fill: white,
+box(105, 645, 420, 155, title: "Borda AgentSession",
+    lines: ["Autenticação · limites · heartbeat", "Voice v1 ↔ agentwire"], titleSize: 22, bodySize: 17)
+rounded(rect(105, 820, 420, 40), fill: white,
         stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 9, width: 1.5)
-text("config/integrations · aliases · tools permitidas · políticas · frases de confirmação",
-     x: 125, y: 828, w: 815, h: 24, size: 16, weight: .medium)
+text("adapter in-process temporário", x: 120, y: 828, w: 390, h: 24, size: 16, weight: .medium)
+
+// Personal assistant owns semantic conversation and integrations.
+rounded(rect(575, 390, 420, 490), fill: gatewayFill,
+        stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 22, width: 2)
+text("APP PERSONAL-ASSISTANT-AGENT", x: 600, y: 413, w: 370, h: 34,
+     size: 18, weight: .bold, align: .left)
+box(605, 470, 360, 125, title: "Conversa + Realtime",
+    lines: ["Prompt · histórico · renovação", "VAD · turnos · interrupção"], titleSize: 20, bodySize: 16)
+box(605, 645, 360, 155, title: "Actions + MCP",
+    lines: ["Autorização · confirmação", "Idempotência · Host Context"], titleSize: 21, bodySize: 17)
+rounded(rect(605, 820, 360, 40), fill: white,
+        stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 9, width: 1.5)
+text("prompts + config/integrations", x: 620, y: 828, w: 330, h: 24, size: 16, weight: .medium)
 
 // LiteLLM owns cloud credentials and platform metadata; it is not a business domain.
 rounded(rect(1050, 390, 660, 490), fill: dockerFill,
@@ -184,13 +192,12 @@ box(1280, 1290, 360, 105, title: "Persistência própria",
     lines: ["definida pelo novo domínio"], fill: futureFill, stroke: futureLine, titleSize: 20, bodySize: 16)
 
 // Voice and inference paths.
-arrow([(535, 280), (535, 305), (60, 305), (60, 532), (110, 532)], both: true)
+arrow([(535, 280), (535, 305), (60, 305), (60, 532), (105, 532)], both: true)
 pill("PCM16 + eventos JSON", x: 310, y: 292, w: 220)
-arrow([(495, 532), (555, 532)], both: true)
-arrow([(755, 595), (755, 645)], both: true)
-arrow([(625, 595), (625, 620), (300, 620), (300, 645)], both: true)
-pill("toolUse / resultado", x: 360, y: 603, w: 190)
-arrow([(955, 715), (1018, 715), (1018, 555), (1080, 555)], both: true)
+arrow([(525, 715), (605, 715)], both: true)
+pill("AgentSession", x: 510, y: 675, w: 120)
+arrow([(785, 595), (785, 645)], both: true)
+arrow([(965, 715), (1018, 715), (1018, 555), (1080, 555)], both: true)
 pill("Realtime + MCP governado", x: 890, y: 654, w: 225)
 arrow([(1395, 470), (1395, 285)], both: true)
 pill("stream AWS autenticado", x: 1280, y: 345, w: 230)
@@ -208,7 +215,7 @@ arrow([(900, 1235), (900, 1290)], both: true)
 arrow([(1460, 1235), (1460, 1290)], both: true, color: futureLine, dashed: true)
 
 // Footer.
-text("Cada aplicação possui seus contratos, regras e dados; o gateway possui os contratos de voz e os perfis de consumo.",
+text("Cada aplicação possui seus contratos, regras e dados; o gateway possui Voice v1 e o agente possui prompt e perfis.",
      x: 80, y: 1570, w: 1640, h: 28, size: 20, weight: .semibold, align: .left)
 text("LiteLLM é plataforma: concentra credenciais AWS, grants e Usage/Spend sem conteúdo da conversa.",
      x: 80, y: 1605, w: 1640, h: 28, size: 18, align: .left)

@@ -8,20 +8,12 @@ import (
 	"path/filepath"
 	"regexp"
 	. "stsmodel.local/mcpwire"
-	"stsmodel.local/voice-gateway/config/integrations"
+	agentconfig "stsmodel.local/personal-assistant-agent/config"
+	"stsmodel.local/personal-assistant-agent/config/integrations"
 	"time"
 )
 
-type ServerConfig struct {
-	Cwd string            `json:"cwd,omitempty"`
-	Env map[string]string `json:"env,omitempty"` // target env name -> source env name, never literal secrets
-
-	Alias        string            `json:"alias"`
-	Command      string            `json:"command"`
-	Args         []string          `json:"args"`
-	AllowedTools []string          `json:"allowed_tools"`
-	Policies     map[string]Policy `json:"policies"`
-}
+type ServerConfig = agentconfig.ServerConfig
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var aliasPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,23}$`)

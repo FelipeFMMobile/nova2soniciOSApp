@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"stsmodel.local/agentwire"
 	"stsmodel.local/voice-gateway/internal/conversation"
-	"stsmodel.local/voice-gateway/internal/ports"
 	"stsmodel.local/voicewire"
 )
 
@@ -43,7 +43,7 @@ func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	in := make(chan inbound, 8)
 	readDone := make(chan struct{})
-	var agent ports.AgentSession
+	var agent agentwire.AgentSession
 	defer func() {
 		cancel()
 		if agent != nil {
@@ -107,7 +107,7 @@ start:
 				}
 				continue
 			}
-			agent, err = s.agentFactory.Open(ctx, ports.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: "personal-assistant", Provider: s.cfg.Provider})
+			agent, err = s.agentFactory.Open(ctx, agentwire.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: "personal-assistant", Provider: s.cfg.Provider})
 			if err != nil {
 				_ = sendError("provider_unavailable", "agent session could not start")
 				return
@@ -164,7 +164,7 @@ start:
 			if write(voiceEvent) != nil {
 				return
 			}
-			if event.Type == ports.AgentSessionClosed {
+			if event.Type == agentwire.AgentSessionClosed {
 				_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(s.cfg.WriteTimeout))
 				return
 			}
@@ -194,68 +194,68 @@ func readVoiceEvents(ctx context.Context, cancel context.CancelFunc, conn *webso
 	}
 }
 
-func agentCommandFromVoice(event protocol.Event) (ports.AgentCommand, error) {
-	command := ports.AgentCommand{SessionID: event.SessionID, TurnID: event.TurnID, Sequence: event.Sequence}
+func agentCommandFromVoice(event protocol.Event) (agentwire.AgentCommand, error) {
+	command := agentwire.AgentCommand{SessionID: event.SessionID, TurnID: event.TurnID, Sequence: event.Sequence}
 	switch event.Type {
 	case protocol.AudioAppend:
 		pcm, err := protocol.DecodeAudio(event.Audio)
 		if err != nil {
-			return ports.AgentCommand{}, err
+			return agentwire.AgentCommand{}, err
 		}
-		command.Type = ports.InputAudio
+		command.Type = agentwire.InputAudio
 		command.Audio = pcm
 	case protocol.TurnCommit:
-		command.Type = ports.InputCommit
+		command.Type = agentwire.InputCommit
 	case protocol.TurnCancel:
-		command.Type = ports.InputCancel
+		command.Type = agentwire.InputCancel
 	case protocol.ToolConfirm:
-		command.Type = ports.InputConfirmation
+		command.Type = agentwire.InputConfirmation
 		command.OperationID = event.Tool.OperationID
 		command.Approved = *event.Tool.Approved
 	case protocol.SessionStop:
-		command.Type = ports.InputClose
+		command.Type = agentwire.InputClose
 	default:
-		return ports.AgentCommand{}, errors.New("session is already started")
+		return agentwire.AgentCommand{}, errors.New("session is already started")
 	}
 	return command, nil
 }
 
-func voiceEventFromAgent(event ports.AgentEvent) (protocol.Event, error) {
+func voiceEventFromAgent(event agentwire.AgentEvent) (protocol.Event, error) {
 	converted := protocol.Event{
 		TurnID: event.TurnID, Sequence: event.Sequence, Provider: event.Provider,
 		State: event.State, SampleRate: event.SampleRate, Text: event.Text,
 		Role: event.Role, Stage: event.Stage, Code: event.Code, Message: event.Message,
 	}
 	switch event.Type {
-	case ports.AgentSessionReady:
+	case agentwire.AgentSessionReady:
 		converted.Type = protocol.SessionReady
-	case ports.AgentSessionState:
+	case agentwire.AgentSessionState:
 		converted.Type = protocol.SessionState
-	case ports.AgentSessionRenewed:
+	case agentwire.AgentSessionRenewed:
 		converted.Type = protocol.SessionRenewed
-	case ports.AgentSessionClosed:
+	case agentwire.AgentSessionClosed:
 		converted.Type = protocol.SessionStopped
-	case ports.OutputAudio:
+	case agentwire.OutputAudio:
 		if len(event.Audio) == 0 {
 			return protocol.Event{}, errors.New("empty agent audio")
 		}
 		converted.Type = protocol.AudioOutput
 		converted.Audio = base64.StdEncoding.EncodeToString(event.Audio)
-	case ports.OutputTranscript:
+	case agentwire.OutputTranscript:
 		converted.Type = protocol.Transcript
-	case ports.TurnStarted:
+	case agentwire.TurnStarted:
 		converted.Type = protocol.TurnStarted
-	case ports.TurnCompleted:
+	case agentwire.TurnCompleted:
 		converted.Type = protocol.TurnCompleted
-	case ports.TurnInterrupted:
+	case agentwire.TurnInterrupted:
 		converted.Type = protocol.TurnInterrupted
-	case ports.ToolStarted:
+	case agentwire.ToolStarted:
 		converted.Type = protocol.ToolStarted
-	case ports.ToolResult:
+	case agentwire.ToolResult:
 		converted.Type = protocol.ToolResult
-	case ports.ToolConfirmation:
+	case agentwire.ToolConfirmation:
 		converted.Type = protocol.ToolConfirmation
-	case ports.AgentError:
+	case agentwire.AgentError:
 		converted.Type = protocol.Error
 	default:
 		return protocol.Event{}, errors.New("unsupported agent event")

@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"stsmodel.local/voice-gateway/internal/actions"
+	"stsmodel.local/agentwire"
+	assistant "stsmodel.local/personal-assistant-agent/inprocess"
 	"stsmodel.local/voice-gateway/internal/adapters/provider"
 	"stsmodel.local/voice-gateway/internal/bootstrap/config"
-	"stsmodel.local/voice-gateway/internal/ports"
 )
 
 type Counters struct {
@@ -86,8 +86,8 @@ type Server struct {
 	connections  map[*websocket.Conn]struct{}
 	wg           sync.WaitGroup
 	metrics      Counters
-	toolFactory  func(context.Context) (orchestrator.Backend, func(), error)
-	agentFactory ports.AgentSessionFactory
+	toolFactory  assistant.ToolFactory
+	agentFactory agentwire.AgentSessionFactory
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
@@ -114,7 +114,16 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{cfg: cfg, logger: logger, voice: provider.Fake{}, mux: http.NewServeMux(), ctx: ctx, cancel: cancel, slots: make(chan struct{}, cfg.MaxSessions), connections: make(map[*websocket.Conn]struct{})}
-	s.agentFactory = inProcessAgentFactory{server: s}
+	if cfg.Provider == "nova" {
+		_, err := assistant.New(cfg.Agent(), logger, s.agentHooks(), nil)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		s.agentFactory = inProcessNovaFactory{server: s}
+	} else {
+		s.agentFactory = inProcessFakeFactory{server: s}
+	}
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "protocolVersion": 1})
 	})
@@ -122,6 +131,25 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	s.mux.HandleFunc("GET /v1/voice", s.authorize(s.handleVoice))
 	s.mux.HandleFunc("GET /v1/metrics", s.authorize(s.statistics))
 	return s, nil
+}
+
+func (s *Server) agentHooks() assistant.Hooks {
+	return assistant.Hooks{
+		Error:       func() { s.metrics.Errors.Add(1) },
+		Completed:   func() { s.metrics.Completed.Add(1) },
+		Interrupted: func() { s.metrics.Interrupted.Add(1) },
+		FirstAudio:  s.metrics.recordFirstAudio,
+	}
+}
+
+type inProcessNovaFactory struct{ server *Server }
+
+func (f inProcessNovaFactory) Open(ctx context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
+	factory, err := assistant.New(f.server.cfg.Agent(), f.server.logger, f.server.agentHooks(), f.server.toolFactory)
+	if err != nil {
+		return nil, err
+	}
+	return factory.Open(ctx, start)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

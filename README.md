@@ -1,22 +1,28 @@
 # STS Model POC
 
 Assistente speech-to-speech em português brasileiro. O app Apple envia PCM16
-para um gateway Go; o gateway mantém o controle da conversa e usa o endpoint
+para um gateway Go. O gateway cuida do transporte público e entrega a sessão à
+aplicação `personal-assistant-agent`, dona da conversa e do acesso ao endpoint
 Realtime do LiteLLM para chegar ao Amazon Nova 2 Sonic no Bedrock.
 
 ```text
-App Apple / voice-client → voice-gateway (:8080) → LiteLLM (:4000) → Bedrock/Nova
-                              │                    ├─ PostgreSQL Usage/Spend
-                  Conversation + Actions          └─ MCP JSON-RPC/stdio
-                  contratos de voz                    ├─ mcp-notes → SQLite Notes
-                  config/integrations                 └─ mcp-agenda → SQLite Agenda
+App Apple / voice-client → voice-gateway (:8080) → personal-assistant-agent
+                              │                       │
+                       Voice Protocol v1       Prompt + Actions + MCP
+                              │                       │
+                         AgentSession          LiteLLM (:4000) → Bedrock/Nova
+                                                      ├─ PostgreSQL Usage/Spend
+                                                      ├─ mcp-notes → SQLite Notes
+                                                      └─ mcp-agenda → SQLite Agenda
 ```
 
 O gateway nunca recebe credenciais AWS. Ele usa uma chave virtual restrita ao
 modelo `nova-sonic`, à rota Realtime e aos MCPs selecionados. LiteLLM é o único
 componente com o perfil AWS e também a fonte de monitoramento de custo. Cada
 aplicação MCP possui seus contratos, regras, migrações e dados; o gateway possui
-os contratos de voz e os perfis confiáveis de consumo.
+o contrato público de voz. Prompt, confirmação e perfis confiáveis de consumo
+pertencem ao agente. Na fase atual, o gateway carrega o agente pelo adapter
+in-process; o transporte interno remoto ainda não foi introduzido.
 
 ![Arquitetura da POC](docs/images/architecture-litellm.png)
 
@@ -47,7 +53,7 @@ Para Nova, ele:
 2. monta `~/.aws` somente no container LiteLLM, em modo somente leitura;
 3. valida a identidade dentro desse container;
 4. cria/atualiza a chave virtual `sts-go-gateway`;
-5. compila e inicia apenas o gateway Go.
+5. compila e inicia o gateway Go com o adapter temporário in-process do agente.
 
 O app continua usando `ws://127.0.0.1:8080/v1/voice`; seu protocolo público
 não mudou. O painel LiteLLM fica em <http://127.0.0.1:4000/ui>.
@@ -64,6 +70,7 @@ export STS_PROVIDER=nova
 export STS_LITELLM_URL=http://127.0.0.1:4000
 export STS_LITELLM_API_KEY='chave-virtual-sts-go-gateway'
 export STS_LITELLM_REALTIME_MODEL=nova-sonic
+export STS_AGENT_PROMPT_FILE="$PWD/apps/personal-assistant-agent/prompts/system.md"
 export STS_GATEWAY_ADDRESS=127.0.0.1:8080
 export STS_DEVELOPMENT_TOKEN=local-demo-token
 make gateway
@@ -119,7 +126,7 @@ Usage/Spend permanecem no volume existente.
 
 - PostgreSQL do LiteLLM: configuração, chaves e spend logs metadata-only.
 - SQLite Notes/Agenda: dados funcionais e ledger de idempotência.
-- Gateway Go: sem SQLite de auditoria; apenas logs estruturados efêmeros.
+- Gateway Go e agente: sem SQLite de auditoria; apenas logs estruturados efêmeros.
 - Conteúdo de áudio, prompts, transcrições e payloads MCP não deve ser gravado
   pelo LiteLLM nem pelo gateway.
 
@@ -157,9 +164,10 @@ e o [plano de migração](docs/domains/migration-plan.md) orientam a organizaç�
 em aplicações independentes e módulos por domínio, incluindo futuros MCPs Spring.
 A implementação e suas validações estão no [registro da migração](docs/domains/migration-review.md).
 
-As apps Go ficam em `apps/voice-gateway`, `apps/voice-client`, `apps/mcp-notes`
-e `apps/mcp-agenda`, cada uma com `go.mod`, manifesto e Dockerfile. `make check`
+As apps Go ficam em `apps/voice-gateway`, `apps/personal-assistant-agent`,
+`apps/voice-client`, `apps/mcp-notes` e `apps/mcp-agenda`, cada uma com `go.mod`,
+manifesto e Dockerfile. `make check`
 percorre todos os módulos com `GOWORK=off`; `go test ./...` na raiz cobre apenas
 a suíte de integração da raiz. Bibliotecas técnicas locais ficam em `packages/go`.
-Os contratos pertencem às apps e os perfis de integração pertencem ao gateway.
+Os contratos pertencem às apps e os perfis de integração pertencem ao agente.
 Consulte [como adicionar uma aplicação](docs/domains/new-application.md).

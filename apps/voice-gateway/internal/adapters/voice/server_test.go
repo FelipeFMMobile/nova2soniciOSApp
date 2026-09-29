@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,7 +21,8 @@ import (
 )
 
 func testConfig() config.Config {
-	return config.Config{Environment: "development", Provider: "fake", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, TurnTimeout: 2 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}
+	prompt, _ := filepath.Abs("../../../../personal-assistant-agent/prompts/system.md")
+	return config.Config{Environment: "development", Provider: "fake", AgentPromptFile: prompt, MCPBackend: "stdio", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, TurnTimeout: 2 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}
 }
 
 func setup(t *testing.T, cfg config.Config) (*Server, *httptest.Server, string) {

@@ -11,15 +11,11 @@ import (
 	"net/url"
 	"strings"
 	. "stsmodel.local/mcpwire"
+	agentconfig "stsmodel.local/personal-assistant-agent/config"
 	"time"
 )
 
-type GatewayServerConfig struct {
-	Alias        string            `json:"alias"`
-	ServerID     string            `json:"server_id"`
-	AllowedTools []string          `json:"allowed_tools"`
-	Policies     map[string]Policy `json:"policies"`
-}
+type GatewayServerConfig = agentconfig.GatewayServerConfig
 
 type gatewayRoute struct {
 	serverID, original string

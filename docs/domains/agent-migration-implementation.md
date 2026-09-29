@@ -71,8 +71,36 @@ Validação executada e aprovada:
 
 ## Fase 3 — aplicação semântica independente
 
-Estado: não iniciada neste registro.
+Estado: implementada na branch; aguardando integração.
 
-O próximo passo é mover a implementação atrás da porta para
-`personal-assistant-agent`, preservando a fábrica in-process como rollback e
-sem introduzir ainda o transporte remoto.
+Foi criado `apps/personal-assistant-agent` com `go.mod`, manifesto, imagem,
+binário e testes próprios. Prompt, Nova Realtime, actions, adapters MCP,
+perfis de integração, confirmação, evidência privada e produção do Host
+Context foram movidos para esse módulo. Notes e Agenda continuam donos de suas
+regras, dados e ledgers.
+
+A porta de sessão neutra foi promovida para `packages/go/agentwire`, sem
+política de negócio. O gateway mantém somente Voice v1, autenticação, limites,
+WebSocket, métricas de borda e tradução para `AgentSession`. Nova é carregada
+por `personal-assistant-agent/inprocess`, dependência temporária e explícita de
+rollback; o fake determinístico permanece como implementação local da mesma
+porta. O handler legado não registrado foi removido.
+
+O prompt canônico agora é `prompts/system.md`. Tanto o artefato independente
+quanto a fábrica in-process recusam caminho relativo, arquivo ausente, vazio,
+não regular ou maior que 64 KiB. O supervisor local injeta o caminho absoluto.
+
+O modo remoto ainda não existe nesta fase. Portanto, credenciais LiteLLM/MCP
+ainda entram no processo do gateway exclusivamente para alimentar o adapter
+in-process. A condição de não haver esses segredos no gateway será exercitada
+quando o modo remoto for implementado na Fase 4; não foi declarada como
+atendida antecipadamente.
+
+Validação executada e aprovada:
+
+- builds e testes isolados do gateway e do agente com `GOWORK=off`;
+- `make check`: build, testes, race detector, vet e fronteiras de todos os
+  módulos, incluindo a exceção temporária restrita do adapter in-process;
+- `git diff --check`, check do harness e verificação de fronteiras;
+- Voice Protocol v1 e o comportamento de confirmação/idempotência permaneceram
+  cobertos pelas mesmas suítes de integração.

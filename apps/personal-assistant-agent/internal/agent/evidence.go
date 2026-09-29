@@ -1,4 +1,4 @@
-package gateway
+package agent
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"stsmodel.local/mcpwire"
-	"stsmodel.local/voice-gateway/internal/actions"
+	"stsmodel.local/personal-assistant-agent/internal/actions"
 )
 
 // Opt-in private evidence is distinct from normal ephemeral structured logs.

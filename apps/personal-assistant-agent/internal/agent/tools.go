@@ -1,15 +1,15 @@
-package gateway
+package agent
 
 import (
 	"context"
 	"encoding/json"
 	"os"
-	mcpclient "stsmodel.local/voice-gateway/internal/adapters/mcpclient"
+	mcpclient "stsmodel.local/personal-assistant-agent/internal/adapters/mcpclient"
 	"sync"
 
+	"stsmodel.local/agentwire"
 	"stsmodel.local/mcpwire"
-	"stsmodel.local/voice-gateway/internal/actions"
-	"stsmodel.local/voice-gateway/internal/adapters/provider"
+	"stsmodel.local/personal-assistant-agent/internal/actions"
 	"stsmodel.local/voicewire"
 )
 
@@ -30,7 +30,7 @@ type toolRuntime struct {
 	sessionID    string
 }
 
-func (s *Server) openTools(ctx context.Context, namespace, sessionID string) (*toolRuntime, error) {
+func (s *Runtime) openTools(ctx context.Context, namespace, sessionID string) (*toolRuntime, error) {
 	if s.cfg.MCPBackend != "litellm" && s.cfg.MCPCommand == "" && len(s.cfg.MCPServers) == 0 && s.toolFactory == nil {
 		return nil, nil
 	}
@@ -94,7 +94,7 @@ func (t *toolRuntime) Close() {
 		t.evidence.Close()
 	}
 }
-func (t *toolRuntime) specs() []provider.ToolSpec {
+func (t *toolRuntime) specs() []agentwire.ToolSpec {
 	if t == nil {
 		return nil
 	}

@@ -4,12 +4,14 @@
 App Apple / voice-client
   │ WebSocket /v1/voice · JSON + PCM16 16 kHz
   ▼
-voice-gateway · monólito modular Go
-  ├─ Conversation → sessão, VAD/barge-in, renovação e timeouts
-  ├─ Actions → autorização, confirmação e execução de tools
-  ├─ contracts/ → voz e envelope assinado
-  ├─ config/integrations/ → aliases, allowlist e políticas
-  └─ portas Realtime/MCP → LiteLLM
+voice-gateway · borda Go
+  ├─ autenticação, limites, heartbeat e métricas de transporte
+  ├─ contracts/voice/v1 → contrato público
+  └─ AgentSession → personal-assistant-agent
+                       ├─ prompt, histórico, VAD/barge-in e renovação
+                       ├─ Actions → autorização, confirmação e tools
+                       ├─ config/integrations/ → aliases, allowlist e políticas
+                       └─ Realtime/MCP → LiteLLM
                             ├─ perfil AWS somente leitura → Bedrock/Nova
                             ├─ PostgreSQL → chaves + Usage/Spend
                             └─ MCP stdio
@@ -17,9 +19,11 @@ voice-gateway · monólito modular Go
                                  └─ mcp-agenda → contrato e SQLite próprios
 ```
 
-O protocolo público do app termina no Go. O adaptador Go traduz entre os
-eventos internos e OpenAI Realtime, mas não conhece SigV4, Bedrock ou
-credenciais AWS. LiteLLM é a única fronteira cloud e não há fallback direto.
+O protocolo público termina no gateway. Ele traduz Voice v1 para a porta
+`AgentSession`; o agente traduz a conversa para OpenAI Realtime, mas não
+conhece SigV4, Bedrock ou credenciais AWS. LiteLLM é a única fronteira cloud e
+não há fallback direto. Na fase atual, o adapter AgentSession é in-process; o
+transporte remoto será introduzido separadamente.
 
 Cada WebSocket usa seu `requestId` como session/trace ID e recebe as tags
 `sts`, `voice` e `nova`. A chave `sts-go-gateway` autoriza somente
@@ -28,8 +32,10 @@ Cada WebSocket usa seu `requestId` como session/trace ID e recebe as tags
 ## Responsabilidades
 
 - App: captura/reprodução, UI e descarte imediato de áudio interrompido.
-- Voice gateway: autenticação local, estado, PCM, histórico textual limitado,
-  renovação, autorização e confirmação de ferramentas.
+- Voice gateway: autenticação local, WebSocket público, PCM, limites,
+  heartbeat, roteamento e métricas de transporte.
+- Personal assistant agent: prompt, histórico textual limitado, renovação,
+  autorização, confirmação e integração de ferramentas.
 - Apps MCP: regras de negócio, contratos públicos, persistência e ledger
   idempotente de suas próprias operações.
 - LiteLLM: conexão Bedrock Realtime, credenciais AWS, grants e spend logs.
