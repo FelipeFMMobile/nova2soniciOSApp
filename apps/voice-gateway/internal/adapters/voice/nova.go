@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"stsmodel.local/mcpwire"
 	"stsmodel.local/voice-gateway/internal/actions"
 	"stsmodel.local/voice-gateway/internal/adapters/provider/nova"
@@ -15,45 +14,11 @@ import (
 
 // runNova owns all Nova state and writes. Microphone input remains live while
 // inference responds; only the private stream reader runs asynchronously.
-func (s *Server) runNova(ctx context.Context, conn *websocket.Conn, in <-chan inbound, sessionID string, write func(protocol.Event) error) {
+func (s *Server) runNova(ctx context.Context, in <-chan inbound, sessionID, namespace string, write func(protocol.Event) error) {
 	sendError := func(code, message string) {
 		s.metrics.Errors.Add(1)
 		_ = write(protocol.Event{Type: protocol.Error, Code: code, Message: message})
 	}
-	startDeadline := time.NewTimer(s.cfg.ReadTimeout)
-	namespace := sessionID
-	defer startDeadline.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-startDeadline.C:
-			sendError("session_timeout", "session.start was not received in time")
-			return
-		case input, ok := <-in:
-			if !ok {
-				return
-			}
-			if input.err != nil {
-				sendError("invalid_event", input.err.Error())
-				continue
-			}
-			if input.event.Type != protocol.SessionStart {
-				sendError("session_required", "first event must be session.start")
-				continue
-			}
-			if input.event.Provider != "" && input.event.Provider != "nova" {
-				sendError("provider_unavailable", "requested provider is not selected")
-				continue
-			}
-			if input.event.RequestID != "" {
-				namespace = input.event.RequestID
-			}
-			goto started
-		}
-	}
-started:
-	startDeadline.Stop()
 	tools, err := s.openTools(ctx, namespace, sessionID)
 	if err != nil {
 		sendError("mcp_unavailable", "MCP initialization or discovery failed")
@@ -78,8 +43,6 @@ started:
 	openedAt := time.Now()
 	renew := time.NewTimer(s.cfg.NovaMaxSessionAge)
 	defer renew.Stop()
-	ping := time.NewTicker(s.cfg.IdleTimeout / 3)
-	defer ping.Stop()
 	turnTimer := time.NewTimer(time.Hour)
 	turnTimer.Stop()
 	defer turnTimer.Stop()
@@ -140,10 +103,6 @@ started:
 		select {
 		case <-ctx.Done():
 			return
-		case <-ping.C:
-			if conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(s.cfg.WriteTimeout)) != nil {
-				return
-			}
 		case <-turnTimeout:
 			if !emit(mapper.Interrupt()) {
 				return
@@ -234,7 +193,6 @@ started:
 				}
 			case protocol.SessionStop:
 				_ = write(protocol.Event{Type: protocol.SessionStopped, State: session.Closed})
-				_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "session stopped"), time.Now().Add(s.cfg.WriteTimeout))
 				return
 			case protocol.ToolConfirm:
 				if tools == nil || !tools.session.Confirm(e.Tool.OperationID, *e.Tool.Approved) {

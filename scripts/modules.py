@@ -20,6 +20,14 @@ def boundaries():
             for imp in re.findall(r'"(stsmodel\.local/[^"\n]+)"', source.read_text()):
                 if imp.startswith('stsmodel.local/testkit'):
                     raise RuntimeError(f'Production imports testkit: {source}')
+                public_voice_handler = ROOT / 'apps/voice-gateway/internal/adapters/voice/agent_handler.go'
+                semantic_dependencies = [
+                    '/internal/actions',
+                    '/internal/adapters/mcpclient',
+                    '/internal/adapters/provider',
+                ]
+                if source == public_voice_handler and any(part in imp for part in semantic_dependencies):
+                    raise RuntimeError(f'Public voice handler imports agent semantics: {source}: {imp}')
                 domain_dirs = ['internal/actions', 'internal/conversation', 'internal/notes', 'internal/scheduling']
                 if any(part in source.as_posix() for part in domain_dirs) and '/internal/adapters/' in imp:
                     raise RuntimeError(f'Domain imports adapter: {source}: {imp}')

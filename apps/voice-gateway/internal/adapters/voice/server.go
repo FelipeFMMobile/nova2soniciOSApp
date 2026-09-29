@@ -16,6 +16,7 @@ import (
 	"stsmodel.local/voice-gateway/internal/actions"
 	"stsmodel.local/voice-gateway/internal/adapters/provider"
 	"stsmodel.local/voice-gateway/internal/bootstrap/config"
+	"stsmodel.local/voice-gateway/internal/ports"
 )
 
 type Counters struct {
@@ -74,18 +75,19 @@ func (c *Counters) recordFirstAudio(duration time.Duration) {
 }
 
 type Server struct {
-	cfg         config.Config
-	logger      *slog.Logger
-	voice       provider.VoiceProvider
-	mux         *http.ServeMux
-	ctx         context.Context
-	cancel      context.CancelFunc
-	slots       chan struct{}
-	mu          sync.Mutex
-	connections map[*websocket.Conn]struct{}
-	wg          sync.WaitGroup
-	metrics     Counters
-	toolFactory func(context.Context) (orchestrator.Backend, func(), error)
+	cfg          config.Config
+	logger       *slog.Logger
+	voice        provider.VoiceProvider
+	mux          *http.ServeMux
+	ctx          context.Context
+	cancel       context.CancelFunc
+	slots        chan struct{}
+	mu           sync.Mutex
+	connections  map[*websocket.Conn]struct{}
+	wg           sync.WaitGroup
+	metrics      Counters
+	toolFactory  func(context.Context) (orchestrator.Backend, func(), error)
+	agentFactory ports.AgentSessionFactory
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
@@ -112,6 +114,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{cfg: cfg, logger: logger, voice: provider.Fake{}, mux: http.NewServeMux(), ctx: ctx, cancel: cancel, slots: make(chan struct{}, cfg.MaxSessions), connections: make(map[*websocket.Conn]struct{})}
+	s.agentFactory = inProcessAgentFactory{server: s}
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "protocolVersion": 1})
 	})

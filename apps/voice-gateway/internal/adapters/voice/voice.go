@@ -12,10 +12,6 @@ import (
 	"stsmodel.local/voicewire"
 )
 
-type inbound struct {
-	event protocol.Event
-	err   error
-}
 type output struct {
 	event  protocol.Event
 	turnID string
@@ -23,7 +19,7 @@ type output struct {
 	err    error
 }
 
-func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLegacyVoice(w http.ResponseWriter, r *http.Request) {
 	select {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
@@ -83,10 +79,6 @@ func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
 		event.SessionID = conversation.ID
 		_ = conn.SetWriteDeadline(time.Now().Add(s.cfg.WriteTimeout))
 		return conn.WriteJSON(event)
-	}
-	if s.cfg.Provider == "nova" {
-		s.runNova(ctx, conn, in, conversation.ID, write)
-		return
 	}
 	sendError := func(code, message string) error {
 		s.metrics.Errors.Add(1)
