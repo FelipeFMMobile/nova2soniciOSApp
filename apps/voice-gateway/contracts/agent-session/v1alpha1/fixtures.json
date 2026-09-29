@@ -1,0 +1,17 @@
+{
+  "valid": [
+    {"name":"open","phase":"open","sessionId":"session-1","message":{"protocol":"agent-session/v1alpha1","kind":"session.open","agentId":"personal-assistant","start":{"sessionId":"session-1","requestId":"request-1","agentId":"personal-assistant","provider":"nova"}}},
+    {"name":"accepted","phase":"accepted","agentId":"personal-assistant","message":{"protocol":"agent-session/v1alpha1","kind":"session.accepted","agentId":"personal-assistant"}},
+    {"name":"audio","phase":"command","sessionId":"session-1","message":{"protocol":"agent-session/v1alpha1","kind":"session.command","command":{"type":"input.audio","sessionId":"session-1","turnId":"turn-1","sequence":1,"audio":"AAA="}}},
+    {"name":"confirmation","phase":"command","sessionId":"session-1","message":{"protocol":"agent-session/v1alpha1","kind":"session.command","command":{"type":"input.confirmation","sessionId":"session-1","operationId":"operation-1","approved":true}}},
+    {"name":"ready","phase":"event","message":{"protocol":"agent-session/v1alpha1","kind":"session.event","event":{"type":"agent.session.ready","provider":"nova","state":"idle"}}},
+    {"name":"audio output","phase":"event","message":{"protocol":"agent-session/v1alpha1","kind":"session.event","event":{"type":"output.audio","turnId":"turn-1","sequence":1,"audio":"AAA=","sampleRate":24000}}},
+    {"name":"recoverable error","phase":"event","message":{"protocol":"agent-session/v1alpha1","kind":"session.event","event":{"type":"agent.error","code":"provider_unavailable","message":"provider unavailable"}}}
+  ],
+  "invalid": [
+    {"name":"wrong protocol","phase":"decode","message":{"protocol":"agent-session/v2","kind":"session.open"}},
+    {"name":"unknown field","phase":"decode","message":{"protocol":"agent-session/v1alpha1","kind":"session.open","unknown":true}},
+    {"name":"orphan audio","phase":"command","sessionId":"session-1","message":{"protocol":"agent-session/v1alpha1","kind":"session.command","command":{"type":"input.audio","sessionId":"other-session","turnId":"turn-1","sequence":1,"audio":"AAA="}}},
+    {"name":"zero sequence","phase":"command","sessionId":"session-1","message":{"protocol":"agent-session/v1alpha1","kind":"session.command","command":{"type":"input.audio","sessionId":"session-1","turnId":"turn-1","audio":"AAA="}}}
+  ]
+}

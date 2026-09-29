@@ -1,14 +1,18 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"stsmodel.local/agentwire"
 	agentconfig "stsmodel.local/personal-assistant-agent/config"
 	"time"
 )
@@ -18,6 +22,9 @@ type Config struct {
 	GatewayAddress    string
 	DevelopmentToken  string
 	Provider          string
+	AgentMode         string
+	DefaultAgentID    string
+	AgentCatalog      []agentwire.Endpoint
 	AgentPromptFile   string
 	NovaMaxSessionAge time.Duration
 	LiteLLMModel      string
@@ -63,6 +70,8 @@ func Load() (Config, error) {
 		GatewayAddress:    env("STS_GATEWAY_ADDRESS", "127.0.0.1:8080"),
 		DevelopmentToken:  os.Getenv("STS_DEVELOPMENT_TOKEN"),
 		Provider:          env("STS_PROVIDER", "fake"),
+		AgentMode:         env("STS_AGENT_MODE", "inprocess"),
+		DefaultAgentID:    env("STS_DEFAULT_AGENT_ID", "personal-assistant"),
 		AgentPromptFile:   os.Getenv("STS_AGENT_PROMPT_FILE"),
 		NovaMaxSessionAge: duration("STS_NOVA_MAX_SESSION_AGE", 7*time.Minute+30*time.Second),
 		LiteLLMModel:      env("STS_LITELLM_REALTIME_MODEL", "nova-sonic"),
@@ -80,10 +89,35 @@ func Load() (Config, error) {
 		MaxSessions:       integer("STS_MAX_SESSIONS", 16),
 		TurnTimeout:       duration("STS_TURN_TIMEOUT", 30*time.Second),
 	}
-	if cfg.MCPBackend != "stdio" && cfg.MCPBackend != "litellm" {
+	if cfg.AgentMode != "inprocess" && cfg.AgentMode != "remote" {
+		return Config{}, fmt.Errorf("STS_AGENT_MODE must be inprocess or remote")
+	}
+	if cfg.AgentMode == "remote" {
+		for _, key := range []string{"STS_AGENT_PROMPT_FILE", "STS_LITELLM_URL", "STS_LITELLM_API_KEY", "STS_LITELLM_REALTIME_MODEL", "STS_MCP_BACKEND", "STS_MCP_COMMAND", "STS_MCP_ARGS", "STS_MCP_SERVERS", "STS_LITELLM_MCP_SERVERS", "STS_MCP_CONTEXT_SECRET", "STS_MCP_EVIDENCE_PATH", "STS_MCP_ALLOWED_TOOLS", "STS_INTEGRATIONS_DIR"} {
+			if os.Getenv(key) != "" {
+				return Config{}, fmt.Errorf("%s belongs to the remote agent, not the gateway", key)
+			}
+		}
+		catalog, err := loadAgentCatalog(os.Getenv("STS_AGENT_CATALOG"))
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.AgentCatalog = catalog
+		known := false
+		for _, endpoint := range catalog {
+			known = known || endpoint.AgentID == cfg.DefaultAgentID
+		}
+		if !known {
+			return Config{}, fmt.Errorf("default agent is absent from trusted catalog")
+		}
+		cfg.AgentPromptFile, cfg.LiteLLMModel, cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.MCPContextSecret = "", "", "", "", ""
+		cfg.MCPServers, cfg.LiteLLMServers, cfg.MCPArgs, cfg.MCPAllowedTools = nil, nil, nil, nil
+		cfg.MCPCommand, cfg.MCPEvidencePath, cfg.MCPBackend = "", "", ""
+	}
+	if cfg.AgentMode == "inprocess" && cfg.MCPBackend != "stdio" && cfg.MCPBackend != "litellm" {
 		return Config{}, fmt.Errorf("STS_MCP_BACKEND must be stdio or litellm")
 	}
-	if cfg.MCPBackend == "litellm" {
+	if cfg.AgentMode == "inprocess" && cfg.MCPBackend == "litellm" {
 		if cfg.MCPCommand != "" || os.Getenv("STS_MCP_SERVERS") != "" {
 			return Config{}, fmt.Errorf("LiteLLM backend cannot use stdio MCP configuration")
 		}
@@ -94,22 +128,22 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("LiteLLM URL and API key required")
 		}
 	}
-	if cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || strings.TrimSpace(cfg.LiteLLMModel) == "") {
+	if cfg.AgentMode == "inprocess" && cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || strings.TrimSpace(cfg.LiteLLMModel) == "") {
 		return Config{}, fmt.Errorf("Nova requires LiteLLM URL, API key and realtime model")
 	}
-	if cfg.Provider == "nova" {
+	if cfg.AgentMode == "inprocess" && cfg.Provider == "nova" {
 		if _, err := agentconfig.LoadPrompt(cfg.AgentPromptFile); err != nil {
 			return Config{}, err
 		}
 	}
-	if cfg.LiteLLMURL != "" {
+	if cfg.AgentMode == "inprocess" && cfg.LiteLLMURL != "" {
 		parsed, err := url.Parse(cfg.LiteLLMURL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.RawQuery != "" || parsed.Fragment != "" {
 			return Config{}, fmt.Errorf("STS_LITELLM_URL must be an HTTP(S) base URL")
 		}
 	}
 
-	if raw := os.Getenv("STS_MCP_SERVERS"); raw != "" {
+	if raw := os.Getenv("STS_MCP_SERVERS"); cfg.AgentMode == "inprocess" && raw != "" {
 		if cfg.MCPCommand != "" {
 			return Config{}, fmt.Errorf("use STS_MCP_SERVERS or STS_MCP_COMMAND, not both")
 		}
@@ -117,12 +151,12 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("STS_MCP_SERVERS must be a nonempty JSON server array")
 		}
 	}
-	if raw := os.Getenv("STS_MCP_ARGS"); raw != "" {
+	if raw := os.Getenv("STS_MCP_ARGS"); cfg.AgentMode == "inprocess" && raw != "" {
 		if err := json.Unmarshal([]byte(raw), &cfg.MCPArgs); err != nil {
 			return Config{}, fmt.Errorf("STS_MCP_ARGS must be a JSON string array")
 		}
 	}
-	if cfg.MCPCommand != "" && !filepath.IsAbs(cfg.MCPCommand) {
+	if cfg.AgentMode == "inprocess" && cfg.MCPCommand != "" && !filepath.IsAbs(cfg.MCPCommand) {
 		return Config{}, fmt.Errorf("STS_MCP_COMMAND must be an absolute executable path")
 	}
 	for i, name := range cfg.MCPAllowedTools {
@@ -149,6 +183,40 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("timeouts must be positive")
 	}
 	return cfg, nil
+}
+
+var environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func loadAgentCatalog(raw string) ([]agentwire.Endpoint, error) {
+	var entries []struct {
+		ID       string `json:"id"`
+		Endpoint string `json:"endpoint"`
+		Protocol string `json:"protocol"`
+		TokenEnv string `json:"token_env"`
+	}
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&entries); err != nil || len(entries) == 0 {
+		return nil, fmt.Errorf("STS_AGENT_CATALOG must be a nonempty strict JSON array")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, fmt.Errorf("STS_AGENT_CATALOG contains trailing JSON")
+	}
+	endpoints := make([]agentwire.Endpoint, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Protocol != agentwire.Protocol || !environmentName.MatchString(entry.TokenEnv) || !strings.HasPrefix(entry.TokenEnv, "STS_AGENT_TOKEN") {
+			return nil, fmt.Errorf("agent catalog protocol or token reference is invalid")
+		}
+		token, ok := os.LookupEnv(entry.TokenEnv)
+		if !ok || token == "" {
+			return nil, fmt.Errorf("agent catalog token reference is missing")
+		}
+		endpoints = append(endpoints, agentwire.Endpoint{AgentID: entry.ID, URL: entry.Endpoint, Token: token})
+	}
+	if _, err := agentwire.NewRemoteFactory(endpoints); err != nil {
+		return nil, err
+	}
+	return endpoints, nil
 }
 
 func (c Config) Agent() agentconfig.Config {

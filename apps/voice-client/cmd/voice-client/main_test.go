@@ -93,6 +93,7 @@ func TestTerminalNativeBargeInRetainsOnlyNewResponse(t *testing.T) {
 	}))
 	defer bridge.Close()
 	t.Setenv("STS_PROVIDER", "nova")
+	t.Setenv("STS_AGENT_PROMPT_FILE", filepath.Join(testkit.Root(), "apps", "personal-assistant-agent", "prompts", "system.md"))
 	t.Setenv("STS_LITELLM_URL", bridge.URL)
 	t.Setenv("STS_LITELLM_API_KEY", "service-key")
 	t.Setenv("STS_LITELLM_REALTIME_MODEL", "nova-sonic")

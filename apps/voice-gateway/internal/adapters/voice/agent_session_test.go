@@ -3,8 +3,11 @@ package gateway
 import (
 	"context"
 	"encoding/base64"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"stsmodel.local/agentwire"
 	"stsmodel.local/voicewire"
@@ -13,6 +16,41 @@ import (
 type recordingAgentFactory struct {
 	starts   chan agentwire.AgentSessionStart
 	sessions chan *recordingAgentSession
+}
+
+func TestVoiceHandlerUsesRemoteAgentSession(t *testing.T) {
+	remoteFactory := &recordingAgentFactory{starts: make(chan agentwire.AgentSessionStart, 1), sessions: make(chan *recordingAgentSession, 1)}
+	handler, err := agentwire.NewHandler(agentwire.ServerConfig{AgentID: "personal-assistant", Token: "internal-token", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, MaxSessions: 2}, remoteFactory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := httptest.NewServer(handler)
+	defer remote.Close()
+	cfg := testConfig()
+	cfg.AgentMode = "remote"
+	cfg.AgentPromptFile = ""
+	cfg.MCPBackend = ""
+	cfg.DefaultAgentID = "personal-assistant"
+	cfg.AgentCatalog = []agentwire.Endpoint{{AgentID: "personal-assistant", URL: "ws" + strings.TrimPrefix(remote.URL, "http") + "/v1alpha1/session", Token: "internal-token"}}
+	_, _, url := setup(t, cfg)
+	c := dial(t, url, "")
+	send(t, c, protocol.Event{Type: protocol.SessionStart, Provider: "fake", RequestID: "remote-contract"})
+	ready := until(t, c, protocol.SessionReady)
+	start := <-remoteFactory.starts
+	agent := <-remoteFactory.sessions
+	if start.SessionID != ready.SessionID || start.RequestID != "remote-contract" || start.AgentID != "personal-assistant" {
+		t.Fatal(start, ready)
+	}
+	pcm := []byte{0, 0, 1, 0}
+	send(t, c, protocol.Event{Type: protocol.AudioAppend, SessionID: ready.SessionID, TurnID: "turn-remote", Sequence: 1, SampleRate: 16000, Audio: base64.StdEncoding.EncodeToString(pcm)})
+	if command := <-agent.commands; command.Type != agentwire.InputAudio || command.TurnID != "turn-remote" || string(command.Audio) != string(pcm) {
+		t.Fatal(command)
+	}
+	send(t, c, protocol.Event{Type: protocol.SessionStop, SessionID: ready.SessionID})
+	if command := <-agent.commands; command.Type != agentwire.InputClose {
+		t.Fatal(command)
+	}
+	until(t, c, protocol.SessionStopped)
 }
 
 func (f *recordingAgentFactory) Open(_ context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {

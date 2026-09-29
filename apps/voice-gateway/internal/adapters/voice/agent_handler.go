@@ -107,7 +107,7 @@ start:
 				}
 				continue
 			}
-			agent, err = s.agentFactory.Open(ctx, agentwire.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: "personal-assistant", Provider: s.cfg.Provider})
+			agent, err = s.agentFactory.Open(ctx, agentwire.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: s.cfg.DefaultAgentID, Provider: s.cfg.Provider})
 			if err != nil {
 				_ = sendError("provider_unavailable", "agent session could not start")
 				return

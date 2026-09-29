@@ -140,7 +140,7 @@ box(105, 645, 420, 155, title: "Borda AgentSession",
     lines: ["Autenticação · limites · heartbeat", "Voice v1 ↔ agentwire"], titleSize: 22, bodySize: 17)
 rounded(rect(105, 820, 420, 40), fill: white,
         stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 9, width: 1.5)
-text("adapter in-process temporário", x: 120, y: 828, w: 390, h: 24, size: 16, weight: .medium)
+text("in-process padrão · remoto opt-in", x: 120, y: 828, w: 390, h: 24, size: 16, weight: .medium)
 
 // Personal assistant owns semantic conversation and integrations.
 rounded(rect(575, 390, 420, 490), fill: gatewayFill,
@@ -195,7 +195,7 @@ box(1280, 1290, 360, 105, title: "Persistência própria",
 arrow([(535, 280), (535, 305), (60, 305), (60, 532), (105, 532)], both: true)
 pill("PCM16 + eventos JSON", x: 310, y: 292, w: 220)
 arrow([(525, 715), (605, 715)], both: true)
-pill("AgentSession", x: 510, y: 675, w: 120)
+pill("AgentSession v1alpha1", x: 490, y: 675, w: 165)
 arrow([(785, 595), (785, 645)], both: true)
 arrow([(965, 715), (1018, 715), (1018, 555), (1080, 555)], both: true)
 pill("Realtime + MCP governado", x: 890, y: 654, w: 225)

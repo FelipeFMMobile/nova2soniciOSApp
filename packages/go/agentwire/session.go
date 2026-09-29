@@ -37,56 +37,56 @@ const (
 )
 
 type ToolSpec struct {
-	Name        string
-	Description string
-	Parameters  json.RawMessage
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
 }
 
 type AgentSessionStart struct {
-	SessionID string
-	RequestID string
-	AgentID   string
-	Provider  string
+	SessionID string `json:"sessionId"`
+	RequestID string `json:"requestId,omitempty"`
+	AgentID   string `json:"agentId"`
+	Provider  string `json:"provider,omitempty"`
 }
 
 type AgentCommand struct {
-	Type        string
-	SessionID   string
-	TurnID      string
-	Sequence    uint64
-	Audio       []byte
-	OperationID string
-	Approved    bool
+	Type        string `json:"type"`
+	SessionID   string `json:"sessionId"`
+	TurnID      string `json:"turnId,omitempty"`
+	Sequence    uint64 `json:"sequence,omitempty"`
+	Audio       []byte `json:"audio,omitempty"`
+	OperationID string `json:"operationId,omitempty"`
+	Approved    bool   `json:"approved,omitempty"`
 }
 
 type AgentMetrics struct {
-	FirstAudioMS   float64
-	DurationMS     float64
-	InterruptionMS float64
+	FirstAudioMS   float64 `json:"firstAudioMs,omitempty"`
+	DurationMS     float64 `json:"durationMs,omitempty"`
+	InterruptionMS float64 `json:"interruptionMs,omitempty"`
 }
 
 type AgentTool struct {
-	OperationID string
-	Name        string
-	Arguments   json.RawMessage
-	Result      json.RawMessage
+	OperationID string          `json:"operationId"`
+	Name        string          `json:"name,omitempty"`
+	Arguments   json.RawMessage `json:"arguments,omitempty"`
+	Result      json.RawMessage `json:"result,omitempty"`
 }
 
 type AgentEvent struct {
-	Type       string
-	TurnID     string
-	Sequence   uint64
-	Provider   string
-	State      string
-	Audio      []byte
-	SampleRate int
-	Text       string
-	Role       string
-	Stage      string
-	Code       string
-	Message    string
-	Metrics    *AgentMetrics
-	Tool       *AgentTool
+	Type       string        `json:"type"`
+	TurnID     string        `json:"turnId,omitempty"`
+	Sequence   uint64        `json:"sequence,omitempty"`
+	Provider   string        `json:"provider,omitempty"`
+	State      string        `json:"state,omitempty"`
+	Audio      []byte        `json:"audio,omitempty"`
+	SampleRate int           `json:"sampleRate,omitempty"`
+	Text       string        `json:"text,omitempty"`
+	Role       string        `json:"role,omitempty"`
+	Stage      string        `json:"stage,omitempty"`
+	Code       string        `json:"code,omitempty"`
+	Message    string        `json:"message,omitempty"`
+	Metrics    *AgentMetrics `json:"metrics,omitempty"`
+	Tool       *AgentTool    `json:"tool,omitempty"`
 }
 
 type AgentSession interface {

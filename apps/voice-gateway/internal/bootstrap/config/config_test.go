@@ -148,3 +148,34 @@ func TestLiteLLMGatewayConfiguration(t *testing.T) {
 		t.Fatal("mixed backends accepted")
 	}
 }
+
+func TestRemoteAgentUsesTrustedCatalogWithoutSemanticSecrets(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "remote")
+	t.Setenv("STS_PROVIDER", "nova")
+	t.Setenv("STS_DEFAULT_AGENT_ID", "personal-assistant")
+	t.Setenv("STS_AGENT_TOKEN", "internal-token")
+	t.Setenv("STS_AGENT_CATALOG", `[{"id":"fake-agent","endpoint":"ws://127.0.0.1:8091/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN"},{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN"}]`)
+	cfg, err := Load()
+	if err != nil || cfg.AgentMode != "remote" || len(cfg.AgentCatalog) != 2 || cfg.LiteLLMAPIKey != "" || cfg.MCPContextSecret != "" {
+		t.Fatal(cfg, err)
+	}
+	t.Setenv("STS_DEFAULT_AGENT_ID", "fake-agent")
+	if cfg, err = Load(); err != nil || cfg.DefaultAgentID != "fake-agent" {
+		t.Fatal("configured fake agent was not selectable", cfg, err)
+	}
+	t.Setenv("STS_LITELLM_API_KEY", "must-not-enter-gateway")
+	if _, err := Load(); err == nil {
+		t.Fatal("remote gateway accepted model secret")
+	}
+}
+
+func TestRemoteAgentFailsClosedForUnknownDefault(t *testing.T) {
+	t.Setenv("STS_AGENT_MODE", "remote")
+	t.Setenv("STS_PROVIDER", "nova")
+	t.Setenv("STS_DEFAULT_AGENT_ID", "unknown")
+	t.Setenv("STS_AGENT_TOKEN", "internal-token")
+	t.Setenv("STS_AGENT_CATALOG", `[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN"}]`)
+	if _, err := Load(); err == nil {
+		t.Fatal("unknown default agent accepted")
+	}
+}

@@ -91,6 +91,15 @@ type Server struct {
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
+	if cfg.AgentMode == "" {
+		cfg.AgentMode = "inprocess"
+	}
+	if cfg.DefaultAgentID == "" {
+		cfg.DefaultAgentID = "personal-assistant"
+	}
+	if cfg.AgentMode == "remote" && (cfg.AgentPromptFile != "" || cfg.LiteLLMURL != "" || cfg.LiteLLMAPIKey != "" || cfg.LiteLLMModel != "" || cfg.MCPContextSecret != "" || cfg.MCPCommand != "" || cfg.MCPEvidencePath != "" || len(cfg.MCPServers) != 0 || len(cfg.LiteLLMServers) != 0 || len(cfg.MCPArgs) != 0 || len(cfg.MCPAllowedTools) != 0) {
+		return nil, fmt.Errorf("remote gateway must not receive model or MCP configuration")
+	}
 	if cfg.Provider != "fake" && cfg.Provider != "nova" {
 		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
 	}
@@ -114,7 +123,14 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{cfg: cfg, logger: logger, voice: provider.Fake{}, mux: http.NewServeMux(), ctx: ctx, cancel: cancel, slots: make(chan struct{}, cfg.MaxSessions), connections: make(map[*websocket.Conn]struct{})}
-	if cfg.Provider == "nova" {
+	if cfg.AgentMode == "remote" {
+		factory, err := agentwire.NewRemoteFactory(cfg.AgentCatalog)
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		s.agentFactory = factory
+	} else if cfg.Provider == "nova" {
 		_, err := assistant.New(cfg.Agent(), logger, s.agentHooks(), nil)
 		if err != nil {
 			cancel()
@@ -172,7 +188,7 @@ func (s *Server) authorize(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) providers(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"selected": s.cfg.Provider, "providers": []map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{"selected": s.cfg.Provider, "agentMode": s.cfg.AgentMode, "providers": []map[string]any{
 		{"id": "fake", "available": true, "speech": false, "inputSampleRate": 16000, "outputSampleRate": 24000},
 		{"id": "nova", "available": true, "speech": true, "inputSampleRate": 16000, "outputSampleRate": 24000, "requires": "LiteLLM Realtime and AWS Bedrock authorization"},
 	}})

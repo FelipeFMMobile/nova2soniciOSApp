@@ -21,8 +21,8 @@ modelo `nova-sonic`, à rota Realtime e aos MCPs selecionados. LiteLLM é o úni
 componente com o perfil AWS e também a fonte de monitoramento de custo. Cada
 aplicação MCP possui seus contratos, regras, migrações e dados; o gateway possui
 o contrato público de voz. Prompt, confirmação e perfis confiáveis de consumo
-pertencem ao agente. Na fase atual, o gateway carrega o agente pelo adapter
-in-process; o transporte interno remoto ainda não foi introduzido.
+pertencem ao agente. `agent-session/v1alpha1` remoto está disponível como
+opt-in local; o adapter in-process continua sendo o padrão e o rollback.
 
 ![Arquitetura da POC](docs/images/architecture-litellm.png)
 
@@ -75,6 +75,23 @@ export STS_GATEWAY_ADDRESS=127.0.0.1:8080
 export STS_DEVELOPMENT_TOKEN=local-demo-token
 make gateway
 ```
+
+Para experimentar a separação de processos, inicie o agente em um shell com
+as variáveis LiteLLM acima e `STS_AGENT_TOKEN=local-agent-token` usando
+`make agent`. Em outro shell, sem variáveis LiteLLM/MCP, inicie o gateway:
+
+```bash
+export STS_PROVIDER=nova
+export STS_AGENT_MODE=remote
+export STS_AGENT_TOKEN_GATEWAY=local-agent-token
+export STS_AGENT_CATALOG='[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1alpha1/session","protocol":"agent-session/v1alpha1","token_env":"STS_AGENT_TOKEN_GATEWAY"}]'
+export STS_GATEWAY_ADDRESS=127.0.0.1:8080
+export STS_DEVELOPMENT_TOKEN=local-demo-token
+make gateway
+```
+
+O modo remoto falha se o processo do gateway receber configuração ou segredos
+LiteLLM/MCP. `ws://` é aceito somente em loopback nesta versão alpha.
 
 `deploy/litellm/config.yaml` é a configuração canônica do modelo. A imagem
 LiteLLM está fixada por tag e digest no Dockerfile, incluindo o transporte

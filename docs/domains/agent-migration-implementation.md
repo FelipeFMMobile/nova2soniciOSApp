@@ -1,6 +1,7 @@
 # Implementação — separação gateway/agente
 
-Base: `v0.7.0`. Branch: `codex/agent-migration-v1`.
+Base: `v0.7.0`. Fases 1–3: `codex/agent-migration-v1`.
+Continuação da Fase 4: `codex/agent-migration-phase4`.
 
 Este registro acompanha o plano em
 [`agent-migration-plan.md`](agent-migration-plan.md). Estado planejado não é
@@ -104,3 +105,58 @@ Validação executada e aprovada:
 - `git diff --check`, check do harness e verificação de fronteiras;
 - Voice Protocol v1 e o comportamento de confirmação/idempotência permaneceram
   cobertos pelas mesmas suítes de integração.
+
+## Fase 4 — Agent Session remoto v1alpha1
+
+Estado: implementada na branch; remoto opt-in, in-process ainda padrão.
+
+O contrato canônico foi publicado em
+`apps/voice-gateway/contracts/agent-session/v1alpha1/`, com fixtures positivas
+e negativas. `packages/go/agentwire` implementa framing JSON estrito, cliente,
+servidor e conformidade. Áudio PCM16 permanece explicitamente vinculado a
+sessão, turno e sequência; mensagens e áudio têm limites inferiores aos do
+protocolo público e todas as filas são limitadas.
+
+O gateway ganhou `STS_AGENT_MODE=remote` e um catálogo confiável. Cada entrada
+fixa `agentId`, endpoint, versão e referência a token de ambiente. Bearer derivado e uma
+prova HMAC de desafio autenticam os dois lados. O frontend
+não envia agente nem endpoint. Agente ausente, versão incompatível, token
+inválido, campo desconhecido e `ws://` fora de loopback falham fechados. Um
+segundo agente, inclusive fake, é selecionado apenas mudando o catálogo e o
+default, sem branch por nome no handler público.
+
+O binário `personal-assistant-agent` agora serve o protocolo em loopback e
+carrega sozinho prompt, LiteLLM e MCP. O gateway remoto rejeita na inicialização
+qualquer configuração ou segredo de modelo/MCP. O bearer derivado permanece
+restrito ao rollout local; bind de rede exigirá TLS/mTLS e threat model antes
+de ser permitido.
+
+Desconexão interna gera erro recuperável e encerra Voice v1 sem replay de
+áudio, commit, confirmação ou tool. Os testes cobrem tradução completa pela
+porta, roteamento entre dois agentes, autenticação, agente desconhecido,
+limites, framing e o caminho gateway → agente remoto controlado.
+
+
+### Retomada em 2026-09-29
+
+As alterações não commitadas da sessão anterior foram recuperadas para a
+worktree atual, preservando a cópia original. A revisão corrigiu a autenticação:
+o bearer enviado agora é derivado da chave, que não atravessa o upgrade.
+Um teste simula um processo indevido que tenta forjar a prova usando o bearer
+recebido e verifica rejeição antes de enviar conteúdo da sessão.
+
+Também foi corrigido o teste de barge-in da CLI: ele passa explicitamente o
+caminho absoluto do prompt versionado, necessário desde a extração do agente,
+sem depender da configuração do ambiente de quem executa a suíte.
+
+A Fase 5 permanece pendente: testes espelhados com serviços reais, medição de
+latência, validação Apple/CLI e promoção deliberada do protocolo para v1.
+
+Validação desta retomada aprovada:
+
+- `make check`: builds isolados, testes, race detector e `go vet` em todos os
+  módulos; testes de rede executados com permissão para abrir portas loopback;
+- check do harness, fronteiras de aplicações e JSON das fixtures;
+- `git diff --check`.
+
+Não foram executados smoke AWS/LiteLLM, builds Apple ou deploy nesta fase.

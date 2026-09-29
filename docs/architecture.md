@@ -22,8 +22,8 @@ voice-gateway · borda Go
 O protocolo público termina no gateway. Ele traduz Voice v1 para a porta
 `AgentSession`; o agente traduz a conversa para OpenAI Realtime, mas não
 conhece SigV4, Bedrock ou credenciais AWS. LiteLLM é a única fronteira cloud e
-não há fallback direto. Na fase atual, o adapter AgentSession é in-process; o
-transporte remoto será introduzido separadamente.
+não há fallback direto. `agent-session/v1alpha1` remoto é opt-in e restrito a
+loopback; o adapter in-process continua padrão e rollback durante o rollout.
 
 Cada WebSocket usa seu `requestId` como session/trace ID e recebe as tags
 `sts`, `voice` e `nova`. A chave `sts-go-gateway` autoriza somente

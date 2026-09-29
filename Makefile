@@ -6,7 +6,7 @@ APPLE_PROJECT := apps/apple/NovaVoice.xcodeproj
 APPLE_BUILD_ROOT ?= /private/tmp/sts-apple
 APPLE_SIMULATOR_ID ?= 599499E4-DD38-4C6C-9459-D4FDA8B2AE43
 
-.PHONY: build test race vet gateway mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-demo nova-barge-demo
+.PHONY: build test race vet gateway agent mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-demo nova-barge-demo
 .PHONY: apple-core-test apple-build-macos apple-build-ios apple-ui-test
 .PHONY: dev dev-plan dev-test architecture-diagram
 .PHONY: litellm-up litellm-down
@@ -57,6 +57,9 @@ vet:
 gateway:
 	env GOCACHE=$(GOCACHE) go run ./apps/voice-gateway/cmd/gateway
 
+agent:
+	env GOCACHE=$(GOCACHE) go run ./apps/personal-assistant-agent/cmd/agent
+
 mcp:
 	env GOCACHE=$(GOCACHE) go run ./apps/mcp-notes/cmd/mcp-notes
 
@@ -70,7 +73,7 @@ mcp-gateway: mcp-build
 	env GOCACHE=$(GOCACHE) STS_PROVIDER=nova STS_MCP_COMMAND="$(CURDIR)/bin/mcp-notes" STS_MCP_ARGS='["-db","$(CURDIR)/data/sts.sqlite"]' go run ./apps/voice-gateway/cmd/gateway
 
 fmt:
-	gofmt -w apps/voice-gateway apps/voice-client apps/mcp-notes apps/mcp-agenda packages/go tests
+	gofmt -w apps/voice-gateway apps/personal-assistant-agent apps/voice-client apps/mcp-notes apps/mcp-agenda packages/go tests
 
 check: build test race vet
 
