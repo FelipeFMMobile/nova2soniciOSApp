@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -24,6 +25,52 @@ type Counters struct {
 	Errors           atomic.Int64
 	FirstAudioCount  atomic.Int64
 	FirstAudioMicros atomic.Int64
+	firstAudioWindow latencyWindow
+}
+
+// latencyWindow bounds metric memory while retaining enough recent samples to
+// characterize the extra hop introduced by a future remote agent session.
+type latencyWindow struct {
+	mu     sync.Mutex
+	values []int64
+	next   int
+}
+
+const maxLatencySamples = 1024
+
+func (w *latencyWindow) add(micros int64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.values) < maxLatencySamples {
+		w.values = append(w.values, micros)
+		return
+	}
+	w.values[w.next] = micros
+	w.next = (w.next + 1) % len(w.values)
+}
+
+func (w *latencyWindow) percentiles() (float64, float64) {
+	w.mu.Lock()
+	values := append([]int64(nil), w.values...)
+	w.mu.Unlock()
+	if len(values) == 0 {
+		return 0, 0
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+	value := func(percent int) float64 {
+		index := (percent*len(values) + 99) / 100
+		if index < 1 {
+			index = 1
+		}
+		return float64(values[index-1]) / 1000
+	}
+	return value(50), value(95)
+}
+
+func (c *Counters) recordFirstAudio(duration time.Duration) {
+	c.FirstAudioCount.Add(1)
+	c.FirstAudioMicros.Add(duration.Microseconds())
+	c.firstAudioWindow.add(duration.Microseconds())
 }
 
 type Server struct {
@@ -106,7 +153,8 @@ func (s *Server) statistics(w http.ResponseWriter, r *http.Request) {
 	if count > 0 {
 		mean = float64(s.metrics.FirstAudioMicros.Load()) / float64(count) / 1000
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"activeSessions": len(s.slots), "totalSessions": s.metrics.Sessions.Load(), "completedTurns": s.metrics.Completed.Load(), "interruptedTurns": s.metrics.Interrupted.Load(), "errors": s.metrics.Errors.Load(), "firstAudioSamples": count, "firstAudioMeanMs": mean})
+	p50, p95 := s.metrics.firstAudioWindow.percentiles()
+	writeJSON(w, http.StatusOK, map[string]any{"activeSessions": len(s.slots), "totalSessions": s.metrics.Sessions.Load(), "completedTurns": s.metrics.Completed.Load(), "interruptedTurns": s.metrics.Interrupted.Load(), "errors": s.metrics.Errors.Load(), "firstAudioSamples": count, "firstAudioMeanMs": mean, "firstAudioP50Ms": p50, "firstAudioP95Ms": p95})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

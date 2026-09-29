@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"stsmodel.local/mcpwire"
 	storage "stsmodel.local/testkit"
 	"testing"
@@ -129,5 +130,24 @@ func TestValidationIdempotencyAndFreshReads(t *testing.T) {
 	}
 	if b.calls != 4 {
 		t.Fatal("reads cached", b.calls)
+	}
+}
+
+func TestMutationIsUnknownUntilCompletion(t *testing.T) {
+	s, b := setup(t)
+	args := json.RawMessage(`{"title":"a","content":"b"}`)
+	job, result := s.Plan("create-1", "notes_create", "turn-1", args)
+	if result != nil {
+		t.Fatal(result)
+	}
+	_, result = s.Plan("create-2", "notes_create", "turn-2", args)
+	if result == nil || !result.IsError || !strings.Contains(result.Content[0].Text, "mutation_outcome_pending_or_unknown") || b.calls != 0 {
+		t.Fatal("mutation was repeated before its outcome was known", result, b.calls)
+	}
+	completed := s.Execute(context.Background(), job)
+	s.Complete(job, completed)
+	_, result = s.Plan("create-3", "notes_create", "turn-3", args)
+	if result == nil || result.IsError || b.calls != 1 {
+		t.Fatal("known result was not replayed", result, b.calls)
 	}
 }

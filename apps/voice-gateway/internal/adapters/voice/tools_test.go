@@ -1,15 +1,19 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"github.com/gorilla/websocket"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"stsmodel.local/mcpwire"
 	storage "stsmodel.local/testkit"
 	"stsmodel.local/voice-gateway/internal/actions"
 	"stsmodel.local/voicewire"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -309,4 +313,137 @@ func TestMicrophoneContinuesWhileMCPRuns(t *testing.T) {
 	}
 	until(t, c, protocol.ToolResult)
 	until(t, c, protocol.TurnCompleted)
+}
+
+type replayAfterDisconnectTools struct {
+	mu      sync.Mutex
+	results map[string]mcp.Result
+	effects int
+	calls   int
+	started chan struct{}
+	done    chan struct{}
+	once    sync.Once
+}
+
+func (b *replayAfterDisconnectTools) Tools(context.Context) ([]mcp.Tool, error) {
+	return storage.NotesTools(), nil
+}
+
+func (b *replayAfterDisconnectTools) Call(ctx context.Context, name string, _ json.RawMessage, key string, _ bool) (mcp.Result, error) {
+	b.mu.Lock()
+	b.calls++
+	if result, ok := b.results[key]; ok {
+		b.mu.Unlock()
+		return result, nil
+	}
+	result := mcp.TextResult(map[string]any{"status": "created", "tool": name, "id": "durable-effect-1"}, false)
+	b.results[key] = result
+	b.effects++
+	b.once.Do(func() { close(b.started) })
+	b.mu.Unlock()
+	<-ctx.Done()
+	close(b.done)
+	return mcp.Result{}, ctx.Err()
+}
+
+func TestMutationCommittedBeforeDisconnectReplaysByRequestID(t *testing.T) {
+	var connections atomic.Int64
+	url := bridge(t, func(c *websocket.Conn, _ map[string]any) {
+		n := connections.Add(1)
+		var input map[string]any
+		if c.ReadJSON(&input) != nil {
+			return
+		}
+		userPhrase(c, "user", "crie uma nota")
+		nativeTool(c, "create", "notes_create", `{"title":"Durável","content":"efeito único"}`)
+		if waitTool(c) == nil {
+			return
+		}
+		if n == 1 {
+			t.Error("first connection received a result after the client disconnected")
+			return
+		}
+		nativeAudio(c, "answer")
+		_ = rawEvent(c, "contentEnd", map[string]any{"contentId": "answer", "stopReason": "END_TURN"})
+		for c.ReadJSON(&input) == nil {
+		}
+	})
+	cfg := testConfig()
+	cfg.Provider = "nova"
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
+	cfg.MCPAllowedTools = []string{"notes.create"}
+	s, _, ws := setup(t, cfg)
+	backend := &replayAfterDisconnectTools{results: map[string]mcp.Result{}, started: make(chan struct{}), done: make(chan struct{})}
+	s.toolFactory = func(context.Context) (orchestrator.Backend, func(), error) { return backend, func() {}, nil }
+
+	first := dial(t, ws, "")
+	send(t, first, protocol.Event{Type: protocol.SessionStart, Provider: "nova", RequestID: "disconnect-retry"})
+	firstID := until(t, first, protocol.SessionReady).SessionID
+	appendAudio(t, first, firstID, "input", 1)
+	select {
+	case <-backend.started:
+	case <-time.After(time.Second):
+		t.Fatal("mutation did not reach the backend")
+	}
+	_ = first.Close()
+	select {
+	case <-backend.done:
+	case <-time.After(time.Second):
+		t.Fatal("disconnect did not cancel the unknown operation")
+	}
+
+	second := dial(t, ws, "")
+	send(t, second, protocol.Event{Type: protocol.SessionStart, Provider: "nova", RequestID: "disconnect-retry"})
+	secondID := until(t, second, protocol.SessionReady).SessionID
+	appendAudio(t, second, secondID, "input", 1)
+	event := until(t, second, protocol.ToolResult)
+	var result mcp.Result
+	if json.Unmarshal(event.Tool.Result, &result) != nil || result.IsError || mcp.Status(result) != "created" {
+		t.Fatal("durable result was not replayed", event)
+	}
+	until(t, second, protocol.TurnCompleted)
+	backend.mu.Lock()
+	effects, calls := backend.effects, backend.calls
+	backend.mu.Unlock()
+	if effects != 1 || calls != 2 {
+		t.Fatal("retry duplicated a committed mutation", effects, calls)
+	}
+}
+
+func TestOperationalLogsExcludeConversationContent(t *testing.T) {
+	const transcript = "transcrição privada 9257"
+	const arguments = `{"query":"consulta privada 3481"}`
+	url := bridge(t, func(c *websocket.Conn, _ map[string]any) {
+		var input map[string]any
+		if c.ReadJSON(&input) != nil {
+			return
+		}
+		userPhrase(c, "user", transcript)
+		nativeTool(c, "safe-operation", "notes_list", arguments)
+		if waitTool(c) == nil {
+			return
+		}
+		nativeAudio(c, "answer")
+		_ = rawEvent(c, "contentEnd", map[string]any{"contentId": "answer", "stopReason": "END_TURN"})
+		for c.ReadJSON(&input) == nil {
+		}
+	})
+	cfg := testConfig()
+	cfg.Provider = "nova"
+	cfg.LiteLLMURL, cfg.LiteLLMAPIKey, cfg.LiteLLMModel = url, "service-key", "nova-sonic"
+	cfg.MCPAllowedTools = []string{"notes.list"}
+	s, _, ws := setup(t, cfg)
+	var logs bytes.Buffer
+	s.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	s.toolFactory = func(context.Context) (orchestrator.Backend, func(), error) { return &testTools{}, func() {}, nil }
+	c := dial(t, ws, "")
+	sid := startNova(t, c)
+	appendAudio(t, c, sid, "input", 1)
+	until(t, c, protocol.ToolResult)
+	until(t, c, protocol.TurnCompleted)
+	for _, private := range []string{transcript, "consulta privada 3481", "exclusive 7419", arguments} {
+		if strings.Contains(logs.String(), private) {
+			t.Fatalf("conversation content leaked to operational logs: %q", private)
+		}
+	}
 }

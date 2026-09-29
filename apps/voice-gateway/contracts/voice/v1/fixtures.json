@@ -1,0 +1,54 @@
+{
+  "validClientEvents": [
+    {
+      "name": "start-default",
+      "type": "session.start",
+      "json": {"version": 1, "type": "session.start"}
+    },
+    {
+      "name": "start-nova-retry",
+      "type": "session.start",
+      "json": {"version": 1, "type": "session.start", "provider": "nova", "requestId": "logical-request-1"}
+    },
+    {
+      "name": "audio",
+      "type": "audio.append",
+      "json": {"version": 1, "type": "audio.append", "sessionId": "session-1", "turnId": "turn-1", "sequence": 1, "sampleRate": 16000, "audio": "AAAAAA=="}
+    },
+    {
+      "name": "commit",
+      "type": "turn.commit",
+      "json": {"version": 1, "type": "turn.commit", "sessionId": "session-1", "turnId": "turn-1"}
+    },
+    {
+      "name": "cancel",
+      "type": "turn.cancel",
+      "json": {"version": 1, "type": "turn.cancel", "sessionId": "session-1", "turnId": "turn-1"}
+    },
+    {
+      "name": "confirm",
+      "type": "tool.confirm",
+      "json": {"version": 1, "type": "tool.confirm", "sessionId": "session-1", "tool": {"operationId": "operation-1", "approved": true}}
+    },
+    {
+      "name": "stop",
+      "type": "session.stop",
+      "json": {"version": 1, "type": "session.stop", "sessionId": "session-1"}
+    }
+  ],
+  "invalidClientEvents": [
+    {"name": "wrong-version", "json": {"version": 2, "type": "session.start"}},
+    {"name": "unknown-field", "json": {"version": 1, "type": "session.start", "agentId": "not-in-v1"}},
+    {"name": "client-session-id", "json": {"version": 1, "type": "session.start", "sessionId": "client-selected"}},
+    {"name": "audio-gap", "json": {"version": 1, "type": "audio.append", "sessionId": "session-1", "turnId": "turn-1", "sequence": 0, "sampleRate": 16000, "audio": "AAAAAA=="}},
+    {"name": "wrong-rate", "json": {"version": 1, "type": "audio.append", "sessionId": "session-1", "turnId": "turn-1", "sequence": 1, "sampleRate": 24000, "audio": "AAAAAA=="}},
+    {"name": "confirmation-target-injected", "json": {"version": 1, "type": "tool.confirm", "sessionId": "session-1", "tool": {"operationId": "operation-1", "name": "notes.delete", "approved": true}}}
+  ],
+  "serverEvents": [
+    {"name": "ready", "json": {"version": 1, "type": "session.ready", "sessionId": "session-1", "provider": "nova", "state": "idle"}},
+    {"name": "audio", "json": {"version": 1, "type": "audio.output", "sessionId": "session-1", "turnId": "turn-1", "sequence": 1, "audio": "AAAAAA==", "sampleRate": 24000}},
+    {"name": "confirmation", "json": {"version": 1, "type": "tool.confirmation", "sessionId": "session-1", "turnId": "turn-1", "message": "Diga a frase configurada.", "tool": {"operationId": "operation-1", "name": "notes.delete", "arguments": {"id": "note-1"}}}},
+    {"name": "completed", "json": {"version": 1, "type": "turn.completed", "sessionId": "session-1", "turnId": "turn-1", "metrics": {"firstAudioMs": 40, "durationMs": 800}}},
+    {"name": "error", "json": {"version": 1, "type": "error", "sessionId": "session-1", "code": "provider_unavailable", "message": "provider unavailable"}}
+  ]
+}

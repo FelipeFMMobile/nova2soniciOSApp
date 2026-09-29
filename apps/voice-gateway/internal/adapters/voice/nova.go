@@ -99,8 +99,7 @@ started:
 				turnTimeout = turnTimer.C
 			}
 			if event.Type == protocol.AudioOutput && event.Sequence == 1 {
-				s.metrics.FirstAudioCount.Add(1)
-				s.metrics.FirstAudioMicros.Add(mapper.FirstAudioMicros())
+				s.metrics.recordFirstAudio(time.Duration(mapper.FirstAudioMicros()) * time.Microsecond)
 			}
 			if event.Type == protocol.TurnInterrupted {
 				s.metrics.Interrupted.Add(1)

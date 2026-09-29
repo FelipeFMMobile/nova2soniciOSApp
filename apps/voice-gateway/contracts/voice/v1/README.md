@@ -128,8 +128,14 @@ gateway-local cancellation processing before the notification; it excludes
 network transport, Apple playback, and microphone response time.
 
 Authenticated `/v1/metrics` exposes session/turn/error counts, active sessions,
-first-audio sample count and mean. Logs contain identifiers and timing only;
+first-audio sample count, mean, p50 and p95. Percentiles use a bounded rolling
+window of 1,024 samples, so metric memory does not grow with uptime. Logs
+contain identifiers and timing only;
 audio, transcripts, notes, and tokens are not logged.
+
+`fixtures.json` is the executable compatibility baseline for accepted and
+rejected client messages and representative server events. Changes to it are
+contract changes and require an explicit compatibility review.
 
 On 2026-09-16 the terminal demo received 20 chunks / 38,400 bytes and saved an
 0.8-second WAV. First fake audio arrived at 41.103 ms; completion was 825.127

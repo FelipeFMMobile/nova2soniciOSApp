@@ -187,7 +187,7 @@ func TestFakeConversationAudioAndMetrics(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
 		t.Fatal(err)
 	}
-	if stats["firstAudioSamples"] != float64(1) {
+	if stats["firstAudioSamples"] != float64(1) || stats["firstAudioP50Ms"].(float64) <= 0 || stats["firstAudioP95Ms"].(float64) <= 0 {
 		t.Fatal(stats)
 	}
 	send(t, c, protocol.Event{Type: protocol.SessionStop, SessionID: sid})

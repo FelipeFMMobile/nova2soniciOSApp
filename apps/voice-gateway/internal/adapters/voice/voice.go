@@ -283,8 +283,7 @@ func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
 				event.Sequence = outputSequence
 				if firstAudio == 0 {
 					firstAudio = time.Since(startedAt)
-					s.metrics.FirstAudioCount.Add(1)
-					s.metrics.FirstAudioMicros.Add(firstAudio.Microseconds())
+					s.metrics.recordFirstAudio(firstAudio)
 				}
 			}
 			if write(event) != nil {
