@@ -29,10 +29,12 @@ O teste de desconexão usa um backend determinístico em memória para reproduzi
 o limite entre efeito confirmado no executor e resposta perdida no transporte.
 Os testes e2e existentes continuam cobrindo o ledger SQLite real entre sessões.
 
-Validação da fase:
+Validação executada e aprovada:
 
-- testes direcionados dos contratos, actions, Nova e adaptador de voz;
-- `make check` agregado antes do commit da fase;
+- testes direcionados sem cache dos contratos, actions, Nova e adaptador de voz;
+- `make check`: build, testes, race detector, vet e fronteiras de todos os
+  módulos;
+- `git diff --check`, validação JSON das fixtures e check do harness;
 - checks Docker/AWS permanecem opt-in, pois não houve mudança de deploy.
 
 ## Fase 2 — porta AgentSession in-process
