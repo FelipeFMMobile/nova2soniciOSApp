@@ -42,11 +42,18 @@ type ToolSpec struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
+// Principal is the authenticated client identity asserted by the voice edge.
+// Subject is opaque to the transport and must never be accepted from Voice v1.
+type Principal struct {
+	Subject string `json:"subject"`
+}
+
 type AgentSessionStart struct {
-	SessionID string `json:"sessionId"`
-	RequestID string `json:"requestId,omitempty"`
-	AgentID   string `json:"agentId"`
-	Provider  string `json:"provider,omitempty"`
+	SessionID string    `json:"sessionId"`
+	RequestID string    `json:"requestId,omitempty"`
+	AgentID   string    `json:"agentId"`
+	Provider  string    `json:"provider,omitempty"`
+	Principal Principal `json:"principal"`
 }
 
 type AgentCommand struct {

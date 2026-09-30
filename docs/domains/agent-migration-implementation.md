@@ -224,3 +224,24 @@ Validação local: `make check` (build/test/race/vet/isolated), 24 testes Python
 com modelo Realtime simulado; harness, diff e diagrama atualizado. Inferência AWS,
 Usage/Spend ativo, builds Docker e iPhone físico não foram repetidos nesta fase.
 O relato do usuário não é apresentado como evidência automatizada desses gates.
+
+### Consolidação final
+
+O gateway agora constrói um principal confiável depois da autenticação e envia
+`principal.subject` na abertura de Agent Session. Voice v1 não expõe esse campo;
+em desenvolvimento o sujeito padrão é `local-user`, enquanto outros ambientes
+devem definir `STS_PRINCIPAL_ID`. A validação do protocolo rejeita principal
+ausente ou inválido antes de entregar a sessão ao agente.
+
+A fonte canônica do Host Context v1 e seus vetores foi movida para
+`apps/personal-assistant-agent/contracts/host-context/v1/`, junto do produtor.
+`mcpwire` continua sendo apenas a implementação técnica e valida os mesmos
+vetores a partir da nova localização. Documentação de onboarding, MCP e Voice v1
+foi alinhada às fronteiras finais.
+
+A CI agora também constrói separadamente as imagens do gateway e do agente;
+`make images` oferece o mesmo gate local. Isso valida os contextos e `COPY`
+dos Dockerfiles sem tornar Docker requisito da suíte unitária `make check`.
+
+O fechamento executado em 2026-09-30 está documentado no
+[registro final](run-2026-09-30-agent-migration-closure.md).

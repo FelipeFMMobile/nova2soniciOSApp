@@ -35,7 +35,7 @@ func TestVoiceHandlerUsesRemoteAgentSession(t *testing.T) {
 	ready := until(t, c, protocol.SessionReady)
 	start := <-remoteFactory.starts
 	agent := <-remoteFactory.sessions
-	if start.SessionID != ready.SessionID || start.RequestID != "remote-contract" || start.AgentID != "personal-assistant" {
+	if start.SessionID != ready.SessionID || start.RequestID != "remote-contract" || start.AgentID != "personal-assistant" || start.Principal.Subject != "test-user" {
 		t.Fatal(start, ready)
 	}
 	pcm := []byte{0, 0, 1, 0}
@@ -96,7 +96,7 @@ func TestVoiceHandlerUsesAgentSessionPort(t *testing.T) {
 	ready := until(t, c, protocol.SessionReady)
 	start := <-factory.starts
 	agent := <-factory.sessions
-	if start.SessionID != ready.SessionID || start.RequestID != "port-contract" || start.AgentID != "personal-assistant" || start.Provider != "fake" {
+	if start.SessionID != ready.SessionID || start.RequestID != "port-contract" || start.AgentID != "personal-assistant" || start.Provider != "fake" || start.Principal.Subject != "test-user" {
 		t.Fatal("session start was not translated", start, ready)
 	}
 	appendAudio(t, c, ready.SessionID, "turn-1", 1)

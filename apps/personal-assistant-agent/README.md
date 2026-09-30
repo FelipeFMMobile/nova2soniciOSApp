@@ -13,3 +13,6 @@ não vazio e limitado a 64 KiB.
 O serviço exige `STS_AGENT_TOKEN`; Nova exige também `STS_LITELLM_URL` e
 `STS_LITELLM_API_KEY`. `STS_PROVIDER=fake` dispensa modelo, prompt e MCP. `STS_AGENT_ADDRESS` usa `127.0.0.1:8090` por padrão e
 endereços não loopback são rejeitados enquanto TLS/mTLS não estiver disponível.
+
+Cada abertura de Agent Session exige o principal autenticado produzido pelo
+gateway. O agente não aceita identidade diretamente de Voice v1.

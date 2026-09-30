@@ -17,6 +17,11 @@ import (
 // AgentSession port. Model, semantic history, tools and confirmation execute
 // behind the configured factory.
 func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
+	principal, ok := r.Context().Value(principalContextKey{}).(agentwire.Principal)
+	if !ok || agentwire.ValidatePrincipal(principal) != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authenticated principal missing"})
+		return
+	}
 	select {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
@@ -107,7 +112,7 @@ start:
 				}
 				continue
 			}
-			agent, err = s.agentFactory.Open(ctx, agentwire.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: s.cfg.DefaultAgentID, Provider: s.cfg.Provider})
+			agent, err = s.agentFactory.Open(ctx, agentwire.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: s.cfg.DefaultAgentID, Provider: s.cfg.Provider, Principal: principal})
 			if err != nil {
 				_ = sendError("provider_unavailable", "agent session could not start")
 				return

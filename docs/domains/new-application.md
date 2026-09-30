@@ -12,13 +12,13 @@
    `["./mvnw", "-B", "verify"]`; os testes Maven devem fazer parte desse build.
    O CI Go enumera módulos Go; adicione um job Java com o JDK escolhido ao
    implementar o primeiro app Spring. Nenhuma versão de Spring é imposta agora.
-4. No gateway, adicione um perfil JSON confiável. Exemplo para uma nova tool:
+4. No agente, adicione um perfil JSON confiável. Exemplo para uma nova tool:
 
    ```json
    {"tools":{"inventory.remove":{"policy":"confirm_later","confirmation_phrase":"confirmo remover item"}}}
    ```
 
-   Carregue-o via `STS_INTEGRATIONS_DIR` sem recompilar o gateway, ou mantenha-o
+   Carregue-o via `STS_INTEGRATIONS_DIR` sem recompilar o agente, ou mantenha-o
    em `apps/personal-assistant-agent/config/integrations/<nome>/profile.json` para embutir
    no build. Perfis adicionais não podem sobrescrever os embutidos. Políticas
    permitidas são read_only, explicit_intent e confirm_later. explicit_intent
@@ -36,7 +36,7 @@
    transporte remoto antes de mudar a composição atual; a migração preserva
    os binários stdio de Notes/Agenda na imagem LiteLLM.
 7. Execute os testes de contrato da app, os vetores do envelope publicados
-   pelo gateway e integração de confirmação/replay/timeout. Bibliotecas Go
+   pelo `personal-assistant-agent` e integração de confirmação/replay/timeout. Bibliotecas Go
    não são dependência de uma implementação Java. Os vetores atuais foram
    verificados em Go; a interoperabilidade Java deve ser provada na primeira app.
 

@@ -28,7 +28,7 @@ type testSettings struct {
 }
 
 func testConfig() testSettings {
-	return testSettings{Config: config.Config{Environment: "development", Provider: "fake", DefaultAgentID: "personal-assistant", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}, TurnTimeout: 2 * time.Second}
+	return testSettings{Config: config.Config{Environment: "development", Provider: "fake", DefaultAgentID: "personal-assistant", Principal: agentwire.Principal{Subject: "test-user"}, ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}, TurnTimeout: 2 * time.Second}
 }
 func setup(t *testing.T, cfg testSettings) (*Server, *httptest.Server, string) {
 	t.Helper()

@@ -49,11 +49,11 @@ ID; turn events carry turn ID. Audio output sequence starts at 1 for each turn.
 Transcripts have no audio sequence. The fake transcript is explicitly labeled
 as simulated; fake output is 0.8 seconds of tone at 24 kHz.
 
-`tool.started`, `tool.result`, and `tool.confirmation` are implemented for Nova
-with a configured MCP server in Stage 6; fake sessions do not execute tools.
+`tool.started`, `tool.result`, and `tool.confirmation` are forwarded from the
+selected agent; fake sessions do not execute tools.
 Tool payloads carry operationId/name/arguments or result. A native model
-tool-use ID identifies the operation; the gateway maps Nova names to MCP names
-in results. See [MCP integration](../../../../../docs/mcp-integration.md) for limits and approval.
+tool-use ID identifies the operation. Nova/MCP name mapping and tool policy run
+inside `personal-assistant-agent`. See [MCP integration](../../../../../docs/mcp-integration.md) for limits and approval.
 
 `session.start` accepts optional `requestId` (a valid ASCII ID). Reuse it for
 retries with identical arguments. Multiple distinct operations are allowed;

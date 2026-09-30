@@ -1,6 +1,7 @@
 # Contexto do host v1
 
-Contrato publicado pelo gateway; a implementação Go está em `mcpwire`.
+Contrato publicado pelo `personal-assistant-agent`, produtor do envelope; a
+implementação técnica Go está em `mcpwire`.
 `vectors.json` contém segredos fictícios e relógio fixo para testes de
 interoperabilidade. Não são credenciais de nenhum ambiente.
 

@@ -46,6 +46,8 @@ func endpointFor(server *httptest.Server, id, token string) Endpoint {
 	return Endpoint{AgentID: id, URL: "ws" + strings.TrimPrefix(server.URL, "http") + "/v1/session", Token: token}
 }
 
+var testPrincipal = Principal{Subject: "test-user"}
+
 func testAgentServer(t *testing.T, id, token string) (*httptest.Server, *recordingFactory) {
 	t.Helper()
 	factory := &recordingFactory{starts: make(chan AgentSessionStart, 1)}
@@ -67,14 +69,14 @@ func TestRemoteFactoryRoutesOnlyThroughTrustedCatalog(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	session, err := factory.Open(ctx, AgentSessionStart{SessionID: "session-1", RequestID: "request-1", AgentID: "beta", Provider: "nova"})
+	session, err := factory.Open(ctx, AgentSessionStart{SessionID: "session-1", RequestID: "request-1", AgentID: "beta", Provider: "nova", Principal: testPrincipal})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer session.Close()
 	select {
 	case start := <-beta.starts:
-		if start.AgentID != "beta" || start.SessionID != "session-1" {
+		if start.AgentID != "beta" || start.SessionID != "session-1" || start.Principal != testPrincipal {
 			t.Fatal(start)
 		}
 	case <-ctx.Done():
@@ -116,10 +118,10 @@ func TestRemoteFactoryFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova"}); err == nil {
+	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova", Principal: testPrincipal}); err == nil {
 		t.Fatal("invalid credential accepted")
 	}
-	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "unknown", Provider: "nova"}); err == nil {
+	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "unknown", Provider: "nova", Principal: testPrincipal}); err == nil {
 		t.Fatal("unknown agent accepted")
 	}
 	if err := ValidateEndpoint(Endpoint{AgentID: "remote", URL: "ws://192.0.2.1/session", Token: "token"}); err == nil {
@@ -144,7 +146,7 @@ func TestRemoteFactoryRejectsIncompatibleHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova"}); err == nil {
+	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova", Principal: testPrincipal}); err == nil {
 		t.Fatal("incompatible protocol accepted")
 	}
 }
@@ -161,7 +163,7 @@ func TestRemoteFactoryRejectsUnauthenticatedServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova"}); err == nil {
+	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova", Principal: testPrincipal}); err == nil {
 		t.Fatal("server without HMAC proof accepted")
 	}
 }
@@ -183,7 +185,7 @@ func TestRemoteDisconnectBecomesRecoverableEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova"})
+	session, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova", Principal: testPrincipal})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +222,7 @@ func TestRemoteFactoryRejectsProofForgedFromReceivedBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova"}); err == nil {
+	if _, err := factory.Open(context.Background(), AgentSessionStart{SessionID: "session-1", AgentID: "personal-assistant", Provider: "nova", Principal: testPrincipal}); err == nil {
 		t.Fatal("proof forged using received bearer accepted")
 	}
 	if bearer := <-observed; bearer == "secret-key" || bearer == "" {
@@ -240,7 +242,7 @@ func TestRemoteHeartbeatPreservesQuietSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := remote.Open(context.Background(), AgentSessionStart{AgentID: "quiet", SessionID: "quiet-session", Provider: "nova"})
+	session, err := remote.Open(context.Background(), AgentSessionStart{AgentID: "quiet", SessionID: "quiet-session", Provider: "nova", Principal: testPrincipal})
 	if err != nil {
 		t.Fatal(err)
 	}

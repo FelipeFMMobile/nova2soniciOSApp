@@ -23,6 +23,13 @@ const (
 
 var identifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
+func ValidatePrincipal(principal Principal) error {
+	if !identifier.MatchString(principal.Subject) {
+		return errors.New("invalid Agent Session principal")
+	}
+	return nil
+}
+
 type Message struct {
 	Protocol string             `json:"protocol"`
 	Kind     string             `json:"kind"`
@@ -60,6 +67,9 @@ func (m Message) ValidateOpen() error {
 	}
 	if m.Start.RequestID != "" && !identifier.MatchString(m.Start.RequestID) {
 		return errors.New("invalid Agent Session request identity")
+	}
+	if err := ValidatePrincipal(m.Start.Principal); err != nil {
+		return err
 	}
 	return nil
 }

@@ -62,7 +62,7 @@ func TestLocalTransportLatency(t *testing.T) {
 					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					defer cancel()
 					sid := fmt.Sprintf("latency-%d", worker)
-					session, err := factory.Open(ctx, AgentSessionStart{AgentID: "latency", SessionID: sid, Provider: "fake"})
+					session, err := factory.Open(ctx, AgentSessionStart{AgentID: "latency", SessionID: sid, Provider: "fake", Principal: Principal{Subject: "benchmark-user"}})
 					if err != nil {
 						failures <- err
 						return

@@ -39,6 +39,7 @@
   "invalidClientEvents": [
     {"name": "wrong-version", "json": {"version": 2, "type": "session.start"}},
     {"name": "unknown-field", "json": {"version": 1, "type": "session.start", "agentId": "not-in-v1"}},
+    {"name": "client-principal", "json": {"version": 1, "type": "session.start", "principal": {"subject": "admin"}}},
     {"name": "client-session-id", "json": {"version": 1, "type": "session.start", "sessionId": "client-selected"}},
     {"name": "audio-gap", "json": {"version": 1, "type": "audio.append", "sessionId": "session-1", "turnId": "turn-1", "sequence": 0, "sampleRate": 16000, "audio": "AAAAAA=="}},
     {"name": "wrong-rate", "json": {"version": 1, "type": "audio.append", "sessionId": "session-1", "turnId": "turn-1", "sequence": 1, "sampleRate": 24000, "audio": "AAAAAA=="}},

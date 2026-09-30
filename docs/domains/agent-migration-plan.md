@@ -280,4 +280,5 @@ privacidade continua comprovada.
   exige TLS/mTLS, descoberta e threat model adicionais;
 - seleção explícita de agente pelo usuário tem requisito de produto ainda não
   demonstrado; o primeiro rollout usa somente o agente padrão;
-- o limite aceitável de latência adicional ainda precisa de valor de produto.
+- o gate local adotado para latência adicional foi p95 ≤ 10 ms; medições de
+  rede/cloud continuam fora desse limite.

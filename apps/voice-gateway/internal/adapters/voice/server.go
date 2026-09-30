@@ -87,9 +87,14 @@ type Server struct {
 	agentFactory agentwire.AgentSessionFactory
 }
 
+type principalContextKey struct{}
+
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	if cfg.DefaultAgentID == "" {
 		cfg.DefaultAgentID = "personal-assistant"
+	}
+	if err := agentwire.ValidatePrincipal(cfg.Principal); err != nil {
+		return nil, err
 	}
 	if cfg.Provider != "fake" && cfg.Provider != "nova" {
 		return nil, fmt.Errorf("unsupported provider")
@@ -132,7 +137,8 @@ func (s *Server) authorize(next http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
-		next(w, r)
+		ctx := context.WithValue(r.Context(), principalContextKey{}, s.cfg.Principal)
+		next(w, r.WithContext(ctx))
 	}
 }
 

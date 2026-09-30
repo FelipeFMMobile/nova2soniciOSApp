@@ -31,3 +31,7 @@ o conjunto `v0.10.x`; `STS_AGENT_MODE=inprocess` é rejeitado nesta versão.
 No modo remoto, `STS_AGENT_CATALOG` fornece endpoints confiáveis e referências
 a tokens internos; `agentId` e endpoint nunca são aceitos do cliente Voice v1.
 O gateway rejeita configuração ou segredos LiteLLM/MCP nesse modo.
+Após autenticar o cliente, ele associa `STS_PRINCIPAL_ID` à sessão e envia essa
+identidade opaca ao agente. Desenvolvimento local usa `local-user`; ambientes
+não-development devem configurar o valor explicitamente. O cliente Voice v1
+não controla esse campo.

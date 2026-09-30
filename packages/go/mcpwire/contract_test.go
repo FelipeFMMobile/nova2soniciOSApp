@@ -12,7 +12,7 @@ import (
 
 func TestPublishedHostContextVectors(t *testing.T) {
 	_, file, _, _ := runtime.Caller(0)
-	path := filepath.Join(filepath.Dir(file), "../../../apps/voice-gateway/contracts/host-context/v1/vectors.json")
+	path := filepath.Join(filepath.Dir(file), "../../../apps/personal-assistant-agent/contracts/host-context/v1/vectors.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

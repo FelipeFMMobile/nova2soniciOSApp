@@ -255,7 +255,8 @@ class CatalogExtensionTests(unittest.TestCase):
 
 class AgentRolloutTests(unittest.TestCase):
     def test_remote_splits_secrets_and_uses_fresh_internal_credential(self):
-        env = dev.environment("nova", "default", False, "edge-secret", [])
+        with patch.dict(dev.os.environ, {"STS_PRINCIPAL_ID": "account:felipe"}, clear=False):
+            env = dev.environment("nova", "default", False, "edge-secret", [])
         env.update(STS_AGENT_MODE="remote", STS_AGENT_ADDRESS="127.0.0.1:8090",
                    STS_LITELLM_API_KEY="model-secret", STS_MCP_CONTEXT_SECRET="mcp-secret",
                    STS_MCP_BACKEND="litellm", STS_LITELLM_MCP_SERVERS="[]")
@@ -266,7 +267,9 @@ class AgentRolloutTests(unittest.TestCase):
             self.assertNotIn(key, gateway)
             self.assertEqual(agent[key], env[key])
         self.assertNotIn("STS_DEVELOPMENT_TOKEN", agent)
+        self.assertNotIn("STS_PRINCIPAL_ID", agent)
         self.assertNotIn("STS_GATEWAY_ADDRESS", agent)
+        self.assertEqual(gateway["STS_PRINCIPAL_ID"], "account:felipe")
         self.assertEqual(gateway["STS_AGENT_TOKEN"], agent["STS_AGENT_TOKEN"])
         self.assertNotEqual(gateway["STS_AGENT_TOKEN"], "edge-secret")
         self.assertNotEqual(gateway["STS_AGENT_TOKEN"], dev.runtime_environments(env)[0]["STS_AGENT_TOKEN"])

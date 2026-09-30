@@ -9,13 +9,19 @@ APPLE_SIMULATOR_ID ?= 599499E4-DD38-4C6C-9459-D4FDA8B2AE43
 .PHONY: build test race vet gateway agent mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-demo nova-barge-demo
 .PHONY: apple-core-test apple-build-macos apple-build-ios apple-ui-test
 .PHONY: dev dev-plan dev-test architecture-diagram
-.PHONY: litellm-up litellm-down
+.PHONY: litellm-up litellm-down litellm-privacy-audit litellm-redact-history
 
 litellm-up:
 	docker compose --env-file deploy/litellm/.env -f deploy/litellm/compose.yaml up --build -d
 
 litellm-down:
 	docker compose --env-file deploy/litellm/.env -f deploy/litellm/compose.yaml down
+
+litellm-privacy-audit:
+	docker exec -i litellm-postgres-1 sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < deploy/litellm/audit-spend-privacy.sql
+
+litellm-redact-history:
+	docker exec -i litellm-postgres-1 sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < deploy/litellm/redact-spend-history.sql
 
 dev:
 	python3 scripts/dev.py
@@ -99,6 +105,10 @@ agent-latency:
 agent-clients: build
 	GOWORK=off GOCACHE=$(GOCACHE) STS_ROLLOUT_APPLE=1 go test ./tests/e2e -run TestAgentRolloutProcesses -count=1 -v
 
-.PHONY: isolated agent-parity agent-latency agent-clients
+.PHONY: isolated images agent-parity agent-latency agent-clients
 isolated:
 	env GOCACHE=$(GOCACHE) python3 scripts/modules.py isolated
+
+images:
+	docker build -f apps/voice-gateway/Dockerfile -t sts-voice-gateway:local .
+	docker build -f apps/personal-assistant-agent/Dockerfile -t sts-personal-assistant-agent:local .

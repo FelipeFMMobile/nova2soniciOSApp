@@ -94,6 +94,7 @@ def servers(mode: int, fixtures: bool, names: list[str] | None = None) -> list[d
 def environment(provider: str, profile: str, lan: bool, token: str, selected: list[dict], gateway_port: int = 8080) -> dict[str, str]:
     env = dict(os.environ)
     integrations_dir = env.get("STS_INTEGRATIONS_DIR")
+    principal_id = env.get("STS_PRINCIPAL_ID", "local-user")
     # Do not accidentally inherit a previous MCP demo, listen address or evidence capture.
     for key in list(env):
         if key.startswith("STS_") or key.startswith("NOVA_"):
@@ -101,7 +102,7 @@ def environment(provider: str, profile: str, lan: bool, token: str, selected: li
     for key in list(env):
         if key.startswith("AWS_"):
             env.pop(key, None)  # AWS credentials belong only to the LiteLLM container.
-    env.update(STS_PROVIDER=provider, STS_ENV="development",
+    env.update(STS_PROVIDER=provider, STS_ENV="development", STS_PRINCIPAL_ID=principal_id,
                STS_GATEWAY_ADDRESS=f"0.0.0.0:{gateway_port}" if lan else f"127.0.0.1:{gateway_port}",
                STS_DEVELOPMENT_TOKEN=token, STS_LITELLM_URL=LITELLM_URL,
                STS_LITELLM_REALTIME_MODEL="nova-sonic",
@@ -117,7 +118,7 @@ def runtime_environments(env: dict[str, str]) -> tuple[dict[str, str], dict[str,
     internal_token = secrets.token_hex(32)
     address = env.get("STS_AGENT_ADDRESS", "127.0.0.1:8090")
     edge_keys = {"STS_ENV", "STS_PROVIDER", "STS_AGENT_MODE", "STS_GATEWAY_ADDRESS",
-                 "STS_DEVELOPMENT_TOKEN", "STS_READ_TIMEOUT", "STS_WRITE_TIMEOUT",
+                 "STS_DEVELOPMENT_TOKEN", "STS_PRINCIPAL_ID", "STS_READ_TIMEOUT", "STS_WRITE_TIMEOUT",
                  "STS_IDLE_TIMEOUT", "STS_MAX_SESSIONS", "STS_MAX_EVENT_BYTES"}
     gateway = {key: value for key, value in env.items()
                if not key.startswith("STS_") or key in edge_keys}

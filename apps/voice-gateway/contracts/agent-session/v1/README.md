@@ -20,6 +20,12 @@ com o mesmo protocolo e `agentId`. Versão, agente, token ou forma incompatívei
 fecham antes do áudio. Comandos usam `session.command`; eventos usam
 `session.event`.
 
+`session.open.start.principal.subject` é obrigatório e contém uma identidade
+opaca autenticada. O gateway a constrói a partir de configuração ou claims
+confiáveis depois de autenticar o cliente; Voice v1 não oferece campo para o
+frontend escolher ou substituir essa identidade. O agente rejeita principal
+ausente ou inválido antes de iniciar a sessão.
+
 Áudio PCM16 LE é base64, limitado a 128 KiB por mensagem. Cada frame carrega
 sessão, turno e sequência. Frame órfão, sequência zero, PCM ímpar, excesso de
 tamanho e campo desconhecido são rejeitados. Mensagens têm no máximo 256 KiB e

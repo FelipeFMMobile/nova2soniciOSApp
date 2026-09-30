@@ -8,7 +8,7 @@ falha. Nomes públicos e formatos permanecem compatíveis com a POC.
 Cada mutação exige chave de idempotência fornecida pelo host, com replay
 atômico de resultado; chave reutilizada com outros argumentos é conflito.
 O modo local usa `_meta`; o modo LiteLLM exige envelope assinado conforme o
-contrato do gateway em `../voice-gateway/contracts/host-context/v1/`
+contrato do agente em `../../../personal-assistant-agent/contracts/host-context/v1/`
 (caminho a partir da raiz desta aplicação). Não aceitar confirmação como
 argumento de negócio. Exclusão/cancelamento exige autorização do host.
 

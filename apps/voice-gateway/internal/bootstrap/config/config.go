@@ -17,6 +17,7 @@ import (
 type Config struct {
 	Environment, GatewayAddress, DevelopmentToken, Provider, DefaultAgentID string
 	AgentCatalog                                                            []agentwire.Endpoint
+	Principal                                                               agentwire.Principal
 	ReadTimeout, WriteTimeout, IdleTimeout                                  time.Duration
 	MaxEventBytes                                                           int64
 	MaxSessions                                                             int
@@ -48,7 +49,18 @@ func Load() (Config, error) {
 			}
 		}
 	}
-	cfg := Config{Environment: env("STS_ENV", "development"), GatewayAddress: env("STS_GATEWAY_ADDRESS", "127.0.0.1:8080"), DevelopmentToken: os.Getenv("STS_DEVELOPMENT_TOKEN"), Provider: env("STS_PROVIDER", "fake"), DefaultAgentID: env("STS_DEFAULT_AGENT_ID", "personal-assistant"), ReadTimeout: duration("STS_READ_TIMEOUT", 15*time.Second), WriteTimeout: duration("STS_WRITE_TIMEOUT", 15*time.Second), IdleTimeout: duration("STS_IDLE_TIMEOUT", 90*time.Second), MaxEventBytes: int64(integer("STS_MAX_EVENT_BYTES", 512*1024)), MaxSessions: integer("STS_MAX_SESSIONS", 16)}
+	environment := env("STS_ENV", "development")
+	principalID := os.Getenv("STS_PRINCIPAL_ID")
+	if principalID == "" {
+		if environment != "development" {
+			return Config{}, fmt.Errorf("STS_PRINCIPAL_ID is required outside development")
+		}
+		principalID = "local-user"
+	}
+	cfg := Config{Environment: environment, GatewayAddress: env("STS_GATEWAY_ADDRESS", "127.0.0.1:8080"), DevelopmentToken: os.Getenv("STS_DEVELOPMENT_TOKEN"), Provider: env("STS_PROVIDER", "fake"), DefaultAgentID: env("STS_DEFAULT_AGENT_ID", "personal-assistant"), Principal: agentwire.Principal{Subject: principalID}, ReadTimeout: duration("STS_READ_TIMEOUT", 15*time.Second), WriteTimeout: duration("STS_WRITE_TIMEOUT", 15*time.Second), IdleTimeout: duration("STS_IDLE_TIMEOUT", 90*time.Second), MaxEventBytes: int64(integer("STS_MAX_EVENT_BYTES", 512*1024)), MaxSessions: integer("STS_MAX_SESSIONS", 16)}
+	if err := agentwire.ValidatePrincipal(cfg.Principal); err != nil {
+		return Config{}, err
+	}
 	catalog, err := loadAgentCatalog(os.Getenv("STS_AGENT_CATALOG"))
 	if err != nil {
 		return Config{}, err

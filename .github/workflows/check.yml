@@ -40,3 +40,11 @@ jobs:
           GOWORK: 'off'
       - run: python3 -m unittest discover -s tests/scripts -v
       - run: python3 harness/run.py --check
+  docker-images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [voice-gateway, personal-assistant-agent]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f apps/${{ matrix.app }}/Dockerfile -t sts-${{ matrix.app }}:ci .

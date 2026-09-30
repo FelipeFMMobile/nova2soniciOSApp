@@ -124,6 +124,14 @@ Antes do corte, confirme:
 5. Uma queda do LiteLLM produz `provider_unavailable`; não existe fallback
    direto para AWS.
 
+Com os containers da composição ativos, execute `make litellm-privacy-audit`.
+O comando consulta somente a presença de campos de conteúdo e a quantidade de
+registros; não imprime mensagens, argumentos ou resultados. Instalações antigas
+que antecedem o patch de redação podem ser saneadas uma vez com
+`make litellm-redact-history`; a atualização remove somente `arguments` e
+`result` de `metadata.mcp_tool_call_metadata`, preservando custo e atribuição.
+Repita o audit imediatamente depois.
+
 Referências: [provider Bedrock do LiteLLM](https://github.com/BerriAI/litellm-docs/blob/main/docs/providers/bedrock.md),
 [cost tracking](https://github.com/BerriAI/litellm-docs/blob/main/docs/proxy/cost_tracking.md) e
 [Admin UI](https://github.com/BerriAI/litellm-docs/blob/main/docs/proxy/docker_quick_start.md).

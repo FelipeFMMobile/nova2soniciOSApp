@@ -7,6 +7,8 @@ import (
 
 func base(t *testing.T) {
 	t.Helper()
+	t.Setenv("STS_ENV", "development")
+	t.Setenv("STS_PRINCIPAL_ID", "")
 	t.Setenv("STS_AGENT_MODE", "")
 	t.Setenv("STS_AGENT_TOKEN", "test-token")
 	t.Setenv("STS_AGENT_CATALOG", `[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN"}]`)
@@ -14,8 +16,26 @@ func base(t *testing.T) {
 func TestLoadTransportDefaults(t *testing.T) {
 	base(t)
 	cfg, err := Load()
-	if err != nil || cfg.GatewayAddress != "127.0.0.1:8080" || cfg.MaxEventBytes != 512*1024 || len(cfg.AgentCatalog) != 1 {
+	if err != nil || cfg.GatewayAddress != "127.0.0.1:8080" || cfg.MaxEventBytes != 512*1024 || len(cfg.AgentCatalog) != 1 || cfg.Principal.Subject != "local-user" {
 		t.Fatal(cfg, err)
+	}
+}
+
+func TestTrustedPrincipalConfiguration(t *testing.T) {
+	base(t)
+	t.Setenv("STS_PRINCIPAL_ID", "account:felipe")
+	cfg, err := Load()
+	if err != nil || cfg.Principal.Subject != "account:felipe" {
+		t.Fatal(cfg.Principal, err)
+	}
+	t.Setenv("STS_PRINCIPAL_ID", "frontend supplied identity")
+	if _, err := Load(); err == nil {
+		t.Fatal("invalid principal accepted")
+	}
+	base(t)
+	t.Setenv("STS_ENV", "production")
+	if _, err := Load(); err == nil {
+		t.Fatal("production accepted without a trusted principal")
 	}
 }
 func TestSemanticEnvironmentAndLegacyModeRejected(t *testing.T) {
