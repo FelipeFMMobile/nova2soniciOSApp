@@ -4,7 +4,6 @@ WORKDIR /src
 ENV GOWORK=off
 COPY packages/go ./packages/go
 COPY apps/voice-gateway ./apps/voice-gateway
-COPY apps/personal-assistant-agent ./apps/personal-assistant-agent
 WORKDIR /src/apps/voice-gateway
 RUN CGO_ENABLED=1 go build -trimpath -o /out/app ./cmd/gateway
 FROM debian:bookworm-slim

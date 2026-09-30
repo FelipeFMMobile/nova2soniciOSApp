@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"stsmodel.local/agentwire"
-	"stsmodel.local/voice-gateway/internal/conversation"
 	"stsmodel.local/voicewire"
 )
 
@@ -57,7 +57,7 @@ func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(s.cfg.IdleTimeout)) })
 	go readVoiceEvents(ctx, cancel, conn, in, readDone, s.cfg.IdleTimeout)
 
-	sessionID := session.New().ID
+	sessionID := rand.Text()
 	write := func(event protocol.Event) error {
 		event.Version = protocol.Version
 		event.SessionID = sessionID
@@ -156,7 +156,7 @@ start:
 			if !ok {
 				return
 			}
-			if s.cfg.AgentMode == "remote" {
+			{
 				switch event.Type {
 				case agentwire.TurnCompleted:
 					s.metrics.Completed.Add(1)

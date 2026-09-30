@@ -1,4 +1,4 @@
-package inprocess
+package session
 
 import (
 	"context"
@@ -59,10 +59,10 @@ func New(cfg agentconfig.Config, logger *slog.Logger, hooks Hooks, toolFactory T
 
 func (f *Factory) Open(ctx context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
 	if f == nil || f.runtime == nil || start.SessionID == "" || start.AgentID != "personal-assistant" || start.Provider != "nova" {
-		return nil, errors.New("invalid in-process agent session")
+		return nil, errors.New("invalid agent session")
 	}
 	sessionCtx, cancel := context.WithCancel(ctx)
-	session := &inProcessAgentSession{
+	session := &runningSession{
 		cancel: cancel,
 		input:  make(chan agent.Input, 8),
 		events: make(chan agentwire.AgentEvent, 8),
@@ -92,7 +92,7 @@ func (f *Factory) Open(ctx context.Context, start agentwire.AgentSessionStart) (
 	return session, nil
 }
 
-type inProcessAgentSession struct {
+type runningSession struct {
 	cancel    context.CancelFunc
 	input     chan agent.Input
 	events    chan agentwire.AgentEvent
@@ -100,7 +100,7 @@ type inProcessAgentSession struct {
 	closeOnce sync.Once
 }
 
-func (s *inProcessAgentSession) Send(ctx context.Context, command agentwire.AgentCommand) error {
+func (s *runningSession) Send(ctx context.Context, command agentwire.AgentCommand) error {
 	event, err := voiceEventFromAgentCommand(command)
 	if err != nil {
 		return err
@@ -115,9 +115,9 @@ func (s *inProcessAgentSession) Send(ctx context.Context, command agentwire.Agen
 	}
 }
 
-func (s *inProcessAgentSession) Events() <-chan agentwire.AgentEvent { return s.events }
+func (s *runningSession) Events() <-chan agentwire.AgentEvent { return s.events }
 
-func (s *inProcessAgentSession) Close() error {
+func (s *runningSession) Close() error {
 	s.closeOnce.Do(s.cancel)
 	<-s.done
 	return nil

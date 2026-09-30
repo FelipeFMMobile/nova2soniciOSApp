@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shutil
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,13 +37,8 @@ def boundaries():
                     owner = imp.split('/')[1]
                     if not source.is_relative_to(ROOT / 'apps' / owner):
                         raise RuntimeError(f'Cross-application import: {source}: {imp}')
-                if area == 'apps' and imp.startswith('stsmodel.local/personal-assistant-agent') and source.is_relative_to(ROOT / 'apps/voice-gateway'):
-                    temporary_adapter = {
-                        ROOT / 'apps/voice-gateway/internal/adapters/voice/server.go',
-                        ROOT / 'apps/voice-gateway/internal/bootstrap/config/config.go',
-                    }
-                    if source not in temporary_adapter:
-                        raise RuntimeError(f'Unexpected gateway dependency on agent app: {source}: {imp}')
+                if source.is_relative_to(ROOT / 'apps/voice-gateway') and any(imp.startswith(prefix) for prefix in ['stsmodel.local/personal-assistant-agent', 'stsmodel.local/mcpwire', 'stsmodel.local/mcp-notes', 'stsmodel.local/mcp-agenda']):
+                    raise RuntimeError(f'Gateway imports agent/MCP semantics: {source}: {imp}')
                 if area == 'packages/go' and any(imp.startswith('stsmodel.local/' + app + '/') for app in ['voice-gateway', 'personal-assistant-agent', 'mcp-notes', 'mcp-agenda', 'voice-client']):
                     raise RuntimeError(f'Technical library imports app: {source}')
     print('Application boundaries OK', flush=True)
@@ -52,15 +49,35 @@ def build_apps(env):
         app = json.loads(path.read_text())
         subprocess.run(app['build'], cwd=path.parent, env=env, check=True)
 
+def isolated_builds(env):
+    for name in ['voice-gateway', 'personal-assistant-agent']:
+        with tempfile.TemporaryDirectory(prefix='sts-isolated-') as directory:
+            isolated = Path(directory)
+            shutil.copytree(ROOT / 'packages/go', isolated / 'packages/go')
+            app = isolated / 'apps' / name
+            shutil.copytree(ROOT / 'apps' / name, app)
+            subprocess.run(['go', 'build', './...'], cwd=app, env=env, check=True)
+            if name == 'voice-gateway':
+                result = subprocess.run(['go', 'list', '-deps', './cmd/gateway'], cwd=app,
+                                        env=env, check=True, capture_output=True, text=True)
+                forbidden = ['stsmodel.local/personal-assistant-agent', 'stsmodel.local/mcpwire',
+                             'stsmodel.local/mcp-notes', 'stsmodel.local/mcp-agenda']
+                if any(prefix in result.stdout for prefix in forbidden):
+                    raise RuntimeError('Gateway binary depends on agent or MCP code')
+            print(f'Isolated build OK: {name}', flush=True)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['build', 'test', 'race', 'vet', 'boundaries'])
+    parser.add_argument('action', choices=['build', 'test', 'race', 'vet', 'boundaries', 'isolated'])
     args = parser.parse_args()
     boundaries()
     if args.action == 'boundaries':
         return
     env = dict(os.environ, GOWORK='off', STS_TEST_BIN_DIR=str(ROOT / 'bin'))
     env.setdefault('GOCACHE', '/private/tmp/sts-go-cache')
+    if args.action == 'isolated':
+        isolated_builds(env)
+        return
     if args.action in ['build', 'test', 'race']:
         build_apps(env)
     for entry in modules():
@@ -68,7 +85,7 @@ def main():
         print(f'{args.action}: {directory.relative_to(ROOT)}', flush=True)
         if args.action == 'build' and directory.is_relative_to(ROOT / 'apps'):
             relative = directory.relative_to(ROOT).as_posix().replace('/', '-') or 'root'
-            output = Path('/private/tmp/sts-module-build') / relative
+            output = Path(tempfile.gettempdir()) / 'sts-module-build' / relative
             output.mkdir(parents=True, exist_ok=True)
             command = ['build', '-o', str(output) + os.sep]
         elif args.action == 'race':

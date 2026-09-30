@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"stsmodel.local/mcpwire"
-	orchestrator "stsmodel.local/personal-assistant-agent/inprocess"
+	orchestrator "stsmodel.local/personal-assistant-agent/session"
 	storage "stsmodel.local/testkit"
 	"stsmodel.local/voicewire"
 	"sync"

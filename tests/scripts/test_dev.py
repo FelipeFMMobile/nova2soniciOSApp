@@ -177,7 +177,10 @@ class DevTests(unittest.TestCase):
         with socket.socket() as available:
             available.bind(("127.0.0.1", 0))
             port = available.getsockname()[1]
-        launcher = subprocess.Popen([sys.executable, "-u", str(ROOT / "scripts/dev.py"), "--gateway-port", str(port)],
+        with socket.socket() as available_agent:
+            available_agent.bind(("127.0.0.1", 0))
+            agent_port = available_agent.getsockname()[1]
+        launcher = subprocess.Popen([sys.executable, "-u", str(ROOT / "scripts/dev.py"), "--gateway-port", str(port), "--agent-port", str(agent_port)],
                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             launcher.stdin.write("1\n1\ntest-token\ns\n"); launcher.stdin.flush(); launcher.stdin.close()
@@ -209,6 +212,7 @@ class DevTests(unittest.TestCase):
             self.assertEqual(launcher.returncode, 0, stderr)
             self.assertIn("gateway pronto", stdout)
             dev.check_port(port)
+            dev.check_port(agent_port)
         finally:
             if launcher.poll() is None:
                 launcher.send_signal(signal.SIGTERM)
@@ -270,16 +274,9 @@ class AgentRolloutTests(unittest.TestCase):
         self.assertEqual(catalog[0]["protocol"], "agent-session/v1")
         self.assertEqual(catalog[0]["endpoint"], "ws://127.0.0.1:8090/v1/session")
 
-    def test_inprocess_rollback_preserves_runtime_and_has_no_child_agent(self):
-        env = {"STS_AGENT_MODE": "inprocess", "STS_LITELLM_API_KEY": "model-secret"}
-        gateway, agent = dev.runtime_environments(env)
-        self.assertEqual(gateway, env)
-        self.assertIsNone(agent)
-
-    def test_cli_selects_explicit_rollback(self):
-        with patch("builtins.input", side_effect=["2", "", "4", "n", "1", "test-token", "s"]), \
-             patch.object(sys.stdin, "isatty", return_value=False), \
-             patch.object(sys, "argv", ["dev.py", "--agent-mode", "inprocess"]), \
-             patch.object(dev, "run") as launch:
-            self.assertEqual(dev.main(), 0)
-        self.assertEqual(launch.call_args.args[0]["STS_AGENT_MODE"], "inprocess")
+    def test_legacy_mode_is_rejected_before_startup(self):
+        with patch.object(sys, "argv", ["dev.py", "--agent-mode", "inprocess"]), patch.object(dev, "run") as launch:
+            with self.assertRaises(SystemExit) as error:
+                dev.main()
+        self.assertEqual(error.exception.code, 2)
+        launch.assert_not_called()

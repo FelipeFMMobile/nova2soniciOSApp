@@ -73,7 +73,7 @@ func LoadService() (Service, error) {
 		Token:   os.Getenv("STS_AGENT_TOKEN"), ReadTimeout: readTimeout,
 		WriteTimeout: writeTimeout, IdleTimeout: idleTimeout, MaxSessions: maxSessions,
 		Runtime: Config{
-			Provider: "nova", PromptFile: os.Getenv("STS_AGENT_PROMPT_FILE"),
+			Provider: envValue("STS_PROVIDER", "nova"), PromptFile: os.Getenv("STS_AGENT_PROMPT_FILE"),
 			NovaMaxSessionAge: sessionAge, LiteLLMModel: envValue("STS_LITELLM_REALTIME_MODEL", "nova-sonic"),
 			MCPEvidencePath: os.Getenv("STS_MCP_EVIDENCE_PATH"), MCPCommand: os.Getenv("STS_MCP_COMMAND"),
 			MCPAllowedTools: splitCSV(envValue("STS_MCP_ALLOWED_TOOLS", "notes.create,notes.list,notes.delete")),
@@ -105,6 +105,9 @@ func LoadService() (Service, error) {
 		if service.Runtime.MCPCommand != "" || len(service.Runtime.MCPServers) != 0 || json.Unmarshal([]byte(os.Getenv("STS_LITELLM_MCP_SERVERS")), &service.Runtime.LiteLLMServers) != nil {
 			return Service{}, errors.New("invalid LiteLLM MCP configuration")
 		}
+	}
+	if service.Runtime.Provider == "fake" {
+		return service, nil
 	}
 	if err := service.Runtime.Validate(); err != nil {
 		return Service{}, err

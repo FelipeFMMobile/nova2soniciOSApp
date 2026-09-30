@@ -10,10 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"stsmodel.local/agentwire"
-	assistant "stsmodel.local/personal-assistant-agent/inprocess"
+	"stsmodel.local/testkit"
 	"sync"
 	"testing"
 	"time"
@@ -23,42 +22,32 @@ import (
 	"stsmodel.local/voicewire"
 )
 
-func testConfig() config.Config {
-	prompt, _ := filepath.Abs("../../../../personal-assistant-agent/prompts/system.md")
-	return config.Config{AgentMode: "inprocess", Environment: "development", Provider: "fake", AgentPromptFile: prompt, MCPBackend: "stdio", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, TurnTimeout: 2 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}
+type testSettings struct {
+	config.Config
+	TurnTimeout time.Duration
 }
 
-func setup(t *testing.T, cfg config.Config) (*Server, *httptest.Server, string) {
+func testConfig() testSettings {
+	return testSettings{Config: config.Config{Environment: "development", Provider: "fake", DefaultAgentID: "personal-assistant", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 3 * time.Second, MaxSessions: 16, MaxEventBytes: 512 * 1024}, TurnTimeout: 2 * time.Second}
+}
+func setup(t *testing.T, cfg testSettings) (*Server, *httptest.Server, string) {
 	t.Helper()
-	s, err := New(cfg, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if len(cfg.AgentCatalog) == 0 {
+		address := testkit.AvailableAddress(t)
+		env := []string{}
+		for _, item := range os.Environ() {
+			key, _, _ := strings.Cut(item, "=")
+			if !strings.HasPrefix(key, "STS_") {
+				env = append(env, item)
+			}
+		}
+		env = append(env, "STS_PROVIDER=fake", "STS_AGENT_ADDRESS="+address, "STS_AGENT_TOKEN=test-token", "STS_TURN_TIMEOUT="+cfg.TurnTimeout.String())
+		testkit.StartService(t, "personal-assistant-agent", env, address)
+		cfg.AgentCatalog = []agentwire.Endpoint{{AgentID: "personal-assistant", URL: "ws://" + address + "/v1/session", Token: "test-token"}}
+	}
+	s, err := New(cfg.Config, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
-	}
-	if os.Getenv("STS_TEST_AGENT_MODE") == "remote" && cfg.AgentMode != "remote" {
-		agentCfg := s.cfg.Agent()
-		handler, err := agentwire.NewHandler(agentwire.ServerConfig{AgentID: "personal-assistant", Token: "parity-token", ReadTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: 30 * time.Second, MaxSessions: 16}, parityFactory(func(ctx context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
-			factory, err := assistant.New(agentCfg, s.logger, assistant.Hooks{}, s.toolFactory)
-			if err != nil {
-				return nil, err
-			}
-			return factory.Open(ctx, start)
-		}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		remote := httptest.NewServer(handler)
-		t.Cleanup(remote.Close)
-		_ = s.Close(context.Background())
-		remoteCfg := cfg
-		remoteCfg.AgentMode = "remote"
-		remoteCfg.AgentPromptFile, remoteCfg.LiteLLMURL, remoteCfg.LiteLLMAPIKey, remoteCfg.LiteLLMModel = "", "", "", ""
-		remoteCfg.MCPContextSecret, remoteCfg.MCPCommand, remoteCfg.MCPEvidencePath, remoteCfg.MCPBackend = "", "", "", ""
-		remoteCfg.MCPServers, remoteCfg.LiteLLMServers, remoteCfg.MCPArgs, remoteCfg.MCPAllowedTools = nil, nil, nil, nil
-		remoteCfg.AgentCatalog = []agentwire.Endpoint{{AgentID: "personal-assistant", URL: "ws" + strings.TrimPrefix(remote.URL, "http") + "/v1/session", Token: "parity-token"}}
-		s, err = New(remoteCfg, slog.New(slog.NewJSONHandler(io.Discard, nil)))
-		if err != nil {
-			t.Fatal(err)
-		}
 	}
 	h := httptest.NewServer(s)
 	t.Cleanup(func() {
@@ -71,7 +60,6 @@ func setup(t *testing.T, cfg config.Config) (*Server, *httptest.Server, string) 
 	})
 	return s, h, "ws" + strings.TrimPrefix(h.URL, "http") + "/v1/voice"
 }
-
 func dial(t *testing.T, url, token string) *websocket.Conn {
 	t.Helper()
 	headers := http.Header{}
@@ -441,7 +429,7 @@ func TestConcurrentDisconnectsAndShutdownJoinWorkers(t *testing.T) {
 func TestUnavailableNovaIsNotSilentlyReplaced(t *testing.T) {
 	cfg := testConfig()
 	cfg.Provider = "nova"
-	if _, err := New(cfg, nil); err == nil {
+	if _, err := New(cfg.Config, nil); err == nil {
 		t.Fatal("Nova silently fell back to fake")
 	}
 }

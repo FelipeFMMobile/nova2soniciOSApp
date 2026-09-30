@@ -29,6 +29,9 @@ jobs:
         with:
           go-version: '1.27.x'
       - run: python3 scripts/modules.py boundaries
+      - run: python3 scripts/modules.py isolated
+        env:
+          GOCACHE: /tmp/sts-go-cache
       - run: python3 scripts/modules.py build
         env:
           GOCACHE: /tmp/sts-go-cache

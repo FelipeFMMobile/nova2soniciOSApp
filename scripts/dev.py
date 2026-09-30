@@ -112,15 +112,13 @@ def environment(provider: str, profile: str, lan: bool, token: str, selected: li
     return env
 
 
-def runtime_environments(env: dict[str, str]) -> tuple[dict[str, str], dict[str, str] | None]:
+def runtime_environments(env: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
     """Separate edge credentials from semantic credentials before spawning either app."""
-    if env.get("STS_AGENT_MODE") != "remote":
-        return dict(env), None
     internal_token = secrets.token_hex(32)
     address = env.get("STS_AGENT_ADDRESS", "127.0.0.1:8090")
     edge_keys = {"STS_ENV", "STS_PROVIDER", "STS_AGENT_MODE", "STS_GATEWAY_ADDRESS",
                  "STS_DEVELOPMENT_TOKEN", "STS_READ_TIMEOUT", "STS_WRITE_TIMEOUT",
-                 "STS_IDLE_TIMEOUT", "STS_MAX_SESSIONS", "STS_MAX_EVENT_BYTES", "STS_TURN_TIMEOUT"}
+                 "STS_IDLE_TIMEOUT", "STS_MAX_SESSIONS", "STS_MAX_EVENT_BYTES"}
     gateway = {key: value for key, value in env.items()
                if not key.startswith("STS_") or key in edge_keys}
     gateway.update(STS_AGENT_TOKEN=internal_token, STS_DEFAULT_AGENT_ID="personal-assistant",
@@ -128,7 +126,7 @@ def runtime_environments(env: dict[str, str]) -> tuple[dict[str, str], dict[str,
                        "endpoint": f"ws://{address}/v1/session",
                        "protocol": "agent-session/v1", "token_env": "STS_AGENT_TOKEN"}]))
     agent = {key: value for key, value in env.items()
-             if key not in edge_keys or key in {"STS_PROVIDER", "STS_TURN_TIMEOUT"}}
+             if key not in edge_keys or key in {"STS_PROVIDER"}}
     agent.update(STS_AGENT_ADDRESS=address, STS_AGENT_TOKEN=internal_token)
     return gateway, agent
 
@@ -428,8 +426,7 @@ def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = 
             raise RuntimeError(f"Ferramenta ausente: {executable}. Veja os pré-requisitos no README.")
     gateway_port = int(env["STS_GATEWAY_ADDRESS"].rsplit(":", 1)[1])
     ports = [(gateway_port, "0.0.0.0" if env["STS_GATEWAY_ADDRESS"].startswith("0.0.0.0") else "127.0.0.1")]
-    if env.get("STS_AGENT_MODE") == "remote":
-        ports.append((int(env["STS_AGENT_ADDRESS"].rsplit(":", 1)[1]), "127.0.0.1"))
+    ports.append((int(env["STS_AGENT_ADDRESS"].rsplit(":", 1)[1]), "127.0.0.1"))
     ensure_ports(ports)
     profile = env.pop("_STS_AWS_PROFILE", "default")
     if nova:
@@ -438,6 +435,10 @@ def run(env: dict[str, str], selected: list[dict], nova: bool, fixtures: bool = 
         compose_env.update(load_local_litellm_env(), AWS_PROFILE=profile, AWS_REGION="us-east-1")
         check_litellm_aws_identity(compose_env, profile)
         configure_litellm_backend(env, selected, local_litellm)
+    if not nova:
+        for key in list(env):
+            if key.startswith(("STS_LITELLM_", "STS_MCP_", "STS_NOVA_")) or key in {"STS_AGENT_PROMPT_FILE", "STS_INTEGRATIONS_DIR"}:
+                env.pop(key)
     gateway_env, agent_env = runtime_environments(env)
     print("\nCompilando gateway…", flush=True)
     (ROOT / "bin").mkdir(exist_ok=True)
@@ -486,7 +487,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="Pergunta e valida escolhas sem autenticar, compilar ou iniciar serviços.")
     parser.add_argument("--gateway-port", type=int, default=8080, help="Porta local do gateway (padrão 8080).")
-    parser.add_argument("--agent-mode", choices=["remote", "inprocess"], default="remote", help="Transporte Nova; inprocess permite rollback.")
+    parser.add_argument("--agent-mode", choices=["remote"], default="remote", help="Somente remoto; rollback exige v0.10.x.")
     parser.add_argument("--agent-port", type=int, default=8090, help="Porta loopback do agente remoto.")
     parser.add_argument("--mcps", help="Nomes do catálogo separados por vírgula; substitui a seleção interativa de MCPs.")
     args = parser.parse_args()
@@ -512,7 +513,7 @@ def main() -> int:
         print("Atenção: o token padrão é previsível. Use outro token para acesso pela rede local.")
     selected = servers(mode, fixtures, args.mcps.split(",") if args.mcps is not None else None)
     env = environment("nova" if nova else "fake", profile, lan, token, selected, args.gateway_port)
-    env["STS_AGENT_MODE"] = args.agent_mode if nova else "inprocess"
+    env["STS_AGENT_MODE"] = args.agent_mode
     env["STS_AGENT_ADDRESS"] = f"127.0.0.1:{args.agent_port}"
     env["_STS_AWS_PROFILE"] = profile
     print(f"\nResumo: provider={env['STS_PROVIDER']}, agent={env['STS_AGENT_MODE']}, região=us-east-1, gateway={env['STS_GATEWAY_ADDRESS']}")

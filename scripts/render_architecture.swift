@@ -140,7 +140,7 @@ box(105, 645, 420, 155, title: "Borda AgentSession",
     lines: ["Autenticação · limites · heartbeat", "Voice v1 ↔ agentwire"], titleSize: 22, bodySize: 17)
 rounded(rect(105, 820, 420, 40), fill: white,
         stroke: NSColor(calibratedRed: 0.35, green: 0.64, blue: 0.62, alpha: 1), radius: 9, width: 1.5)
-text("remoto padrão · in-process rollback", x: 120, y: 828, w: 390, h: 24, size: 16, weight: .medium)
+text("somente transporte remoto", x: 120, y: 828, w: 390, h: 24, size: 16, weight: .medium)
 
 // Personal assistant owns semantic conversation and integrations.
 rounded(rect(575, 390, 420, 490), fill: gatewayFill,

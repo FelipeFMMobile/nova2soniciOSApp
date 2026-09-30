@@ -188,3 +188,39 @@ A promoção não é uma declaração de validação cloud ou de readiness para 
 remota: não foram executados inferência Bedrock real, auditoria de Usage/Spend
 em banco ativo, teste em iPhone físico ou deploy. Nenhuma atualização do código
 de produção Apple/CLI foi necessária para a compatibilidade demonstrada.
+
+
+## Fase 6 — gateway exclusivamente remoto
+
+Estado: implementada na branch `codex/agent-migration-phase6`, para `v0.11.0`.
+O usuário autorizou o avanço após relatar boa execução local de `v0.10.0`.
+A release `v0.10.x` e sua opção in-process não foram alteradas: a tag e branch
+anteriores continuam disponíveis. A remoção acontece na nova minor, como previsto.
+
+O gateway perdeu a dependência da aplicação agêntica, a conversão de configuração
+semântica, a fábrica Nova e o runtime fake. Nova e fake pertencem agora ao agente;
+o pacote `session` é a composição interna dessa aplicação, não um modo de execução
+no gateway. A borda mantém somente autenticação pública, catálogo, transporte,
+limites, tradução Voice v1/Agent Session v1 e métricas. Configurações semânticas
+antigas no ambiente da borda são rejeitadas, não silenciosamente ignoradas.
+
+Os cenários Nova/MCP foram movidos para `tests/voice` e continuam exercitando
+confirmação, idempotência, renovação, desconexão e privacidade via gateway real.
+Os testes de borda também usam o fake remoto. As regras de turnos e o gerador de
+áudio fake, com seus testes existentes, foram movidos para a aplicação agente.
+
+`make dev` inicia agente e gateway para ambos os ambientes. Fake continua sem
+Docker/AWS. `--agent-mode inprocess` falha antes de iniciar processos. O rollback
+agora consiste em restaurar o conjunto `v0.10.x`, incluindo configuração; não há
+fallback nem migração de dados de negócio nesta remoção.
+
+`make isolated` copia cada aplicação e apenas as bibliotecas técnicas para um
+diretório temporário, compila com `GOWORK=off` e verifica que o binário do gateway
+não depende de agente/MCP. A imagem do gateway não copia mais o agente. A CI
+executa esse gate, além das verificações de fronteira sem a exceção temporária.
+
+Validação local: `make check` (build/test/race/vet/isolated), 24 testes Python com
+`STS_DEV_E2E=1`, incluindo início/encerramento do fake remoto; integração Apple/CLI
+com modelo Realtime simulado; harness, diff e diagrama atualizado. Inferência AWS,
+Usage/Spend ativo, builds Docker e iPhone físico não foram repetidos nesta fase.
+O relato do usuário não é apresentado como evidência automatizada desses gates.

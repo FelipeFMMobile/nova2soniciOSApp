@@ -1,4 +1,4 @@
-package gateway
+package fake
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"stsmodel.local/voice-gateway/internal/conversation"
+	"stsmodel.local/personal-assistant-agent/internal/fake/conversation"
 	"stsmodel.local/voicewire"
 )
 
@@ -24,7 +24,7 @@ func (s *Server) runFake(ctx context.Context, in <-chan inbound, sessionID strin
 	var jobs sync.WaitGroup
 	defer func() { conversation.Close(); jobs.Wait() }()
 	sendError := func(code, message string) error {
-		s.metrics.Errors.Add(1)
+
 		return write(protocol.Event{Type: protocol.Error, TurnID: conversation.TurnID, Code: code, Message: message})
 	}
 	state := func() error {
@@ -42,7 +42,7 @@ func (s *Server) runFake(ctx context.Context, in <-chan inbound, sessionID strin
 			turnCancel()
 			turnCancel = nil
 		}
-		s.metrics.Interrupted.Add(1)
+
 		return write(protocol.Event{Type: protocol.TurnInterrupted, TurnID: turnID, Metrics: &protocol.Metrics{InterruptionMS: float64(time.Since(at).Microseconds()) / 1000}})
 	}
 	startProvider := func(pcm []byte) {
@@ -146,7 +146,7 @@ func (s *Server) runFake(ctx context.Context, in <-chan inbound, sessionID strin
 						return
 					}
 				} else {
-					s.metrics.Completed.Add(1)
+
 					metrics := &protocol.Metrics{FirstAudioMS: float64(firstAudio.Microseconds()) / 1000, DurationMS: float64(time.Since(startedAt).Microseconds()) / 1000}
 					if write(protocol.Event{Type: protocol.TurnCompleted, TurnID: item.turnID, Metrics: metrics}) != nil {
 						return
@@ -165,7 +165,7 @@ func (s *Server) runFake(ctx context.Context, in <-chan inbound, sessionID strin
 				event.Sequence = outputSequence
 				if firstAudio == 0 {
 					firstAudio = time.Since(startedAt)
-					s.metrics.recordFirstAudio(firstAudio)
+
 				}
 			}
 			if write(event) != nil {

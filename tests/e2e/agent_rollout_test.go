@@ -62,7 +62,7 @@ func TestAgentRolloutProcesses(t *testing.T) {
 		}
 	}
 	runtimeEnv := []string{"STS_PROVIDER=nova", "STS_AGENT_PROMPT_FILE=" + filepath.Join(root, "apps/personal-assistant-agent/prompts/system.md"), "STS_LITELLM_URL=" + model.URL, "STS_LITELLM_API_KEY=test-model-key", "STS_MCP_BACKEND=stdio"}
-	for _, mode := range []string{"inprocess", "remote", "inprocess"} {
+	for _, mode := range []string{"remote"} {
 		t.Run(mode, func(t *testing.T) {
 			gatewayAddress := rolloutAddress(t)
 			gatewayEnv := append(append([]string{}, base...), "STS_ENV=development", "STS_PROVIDER=nova", "STS_AGENT_MODE="+mode, "STS_DEVELOPMENT_TOKEN=apple-test-token", "STS_GATEWAY_ADDRESS="+gatewayAddress)
@@ -73,8 +73,7 @@ func TestAgentRolloutProcesses(t *testing.T) {
 				launchRollout(t, root, "personal-assistant-agent", agentEnv, agentAddress)
 				catalog, _ := json.Marshal([]map[string]string{{"id": "personal-assistant", "endpoint": "ws://" + agentAddress + "/v1/session", "protocol": "agent-session/v1", "token_env": "STS_AGENT_TOKEN"}})
 				gatewayEnv = append(gatewayEnv, "STS_AGENT_TOKEN=rollout-internal-token", "STS_AGENT_CATALOG="+string(catalog))
-			} else {
-				gatewayEnv = append(gatewayEnv, runtimeEnv...)
+
 			}
 			launchRollout(t, root, "gateway", gatewayEnv, gatewayAddress)
 			dir := t.TempDir()

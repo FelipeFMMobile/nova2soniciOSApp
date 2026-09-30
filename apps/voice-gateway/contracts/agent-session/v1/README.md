@@ -58,6 +58,5 @@ e associação de commit/cancelamento. Voice v1 limita cada entrada a 32.000 byt
 o envelope interno aceita até 128 KiB, dentro do limite total de 256 KiB. O turno
 semântico e as políticas de confirmação permanecem responsabilidade do agente.
 
-`agent-session/v1alpha1` não é negociado por estes binários. Para rollback use
-`inprocess` com o conjunto `v0.10.x`, ou reverta gateway e agente juntos para
+`agent-session/v1alpha1` não é negociado por estes binários. Para rollback restaure o conjunto `v0.10.x` (que suporta `inprocess`), ou reverta gateway e agente juntos para
 `v0.9.0`; misturar versões do transporte falha antes de aceitar áudio.

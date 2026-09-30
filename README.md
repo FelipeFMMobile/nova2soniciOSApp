@@ -22,8 +22,8 @@ componente com o perfil AWS e também a fonte de monitoramento de custo. Cada
 aplicação MCP possui seus contratos, regras, migrações e dados; o gateway possui
 o contrato público de voz. Prompt, confirmação e perfis confiáveis de consumo
 pertencem ao agente. `agent-session/v1` remoto em loopback é o padrão. O gateway
-não recebe credenciais LiteLLM/MCP. O adapter in-process permanece disponível
-para rollback durante toda a release minor `v0.10.x`.
+não recebe credenciais LiteLLM/MCP. O gateway não carrega o runtime do agente. Desde `v0.11.0`, rollback exige
+restaurar o conjunto de binários/configuração `v0.10.x`.
 
 ![Arquitetura da POC](docs/images/architecture-litellm.png)
 
@@ -57,8 +57,8 @@ Para Nova, ele:
 5. compila e inicia o agente em loopback e depois o gateway, com ambientes separados
    e uma credencial interna aleatória por execução.
 
-Para rollback: `python3 scripts/dev.py --agent-mode inprocess`. O ambiente fake
-usado para demonstração permanece explicitamente in-process e dispensa Docker/AWS.
+Nova e fake usam agente remoto. Fake dispensa Docker/AWS e configuração LiteLLM.
+O modo `inprocess` foi removido em `v0.11.0`; ele permanece na tag `v0.10.0`.
 
 O app continua usando `ws://127.0.0.1:8080/v1/voice`; seu protocolo público
 não mudou. O painel LiteLLM fica em <http://127.0.0.1:4000/ui>.
@@ -68,28 +68,24 @@ Usage/Spend em [docs/nova-litellm-runbook.md](docs/nova-litellm-runbook.md).
 
 ## Execução manual
 
+Em um shell exclusivo para o agente:
+
 ```bash
 AWS_PROFILE=sts-poc make litellm-up
-
 export STS_PROVIDER=nova
-export STS_AGENT_MODE=inprocess # rollback explícito
 export STS_LITELLM_URL=http://127.0.0.1:4000
 export STS_LITELLM_API_KEY='chave-virtual-sts-go-gateway'
-export STS_LITELLM_REALTIME_MODEL=nova-sonic
 export STS_AGENT_PROMPT_FILE="$PWD/apps/personal-assistant-agent/prompts/system.md"
-export STS_GATEWAY_ADDRESS=127.0.0.1:8080
-export STS_DEVELOPMENT_TOKEN=local-demo-token
-make gateway
+export STS_AGENT_TOKEN='credencial-interna-local'
+make agent
 ```
 
-Para o modo remoto padrão, inicie o agente em um shell com
-as variáveis LiteLLM acima e `STS_AGENT_TOKEN=local-agent-token` usando
-`make agent`. Em outro shell, sem variáveis LiteLLM/MCP, inicie o gateway:
+Em outro shell, sem configuração LiteLLM/MCP:
 
 ```bash
 export STS_PROVIDER=nova
 export STS_AGENT_MODE=remote
-export STS_AGENT_TOKEN_GATEWAY=local-agent-token
+export STS_AGENT_TOKEN_GATEWAY='credencial-interna-local'
 export STS_AGENT_CATALOG='[{"id":"personal-assistant","endpoint":"ws://127.0.0.1:8090/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN_GATEWAY"}]'
 export STS_GATEWAY_ADDRESS=127.0.0.1:8080
 export STS_DEVELOPMENT_TOKEN=local-demo-token
@@ -197,7 +193,7 @@ Consulte [como adicionar uma aplicação](docs/domains/new-application.md).
 
 ## Validação do rollout
 
-`make agent-parity` compara os mesmos cenários in-process/remoto/rollback;
+`make agent-parity` executa a regressão semântica pelo transporte remoto;
 `make agent-latency` mede o salto interno (gate p95 ≤ 10 ms);
 `make agent-clients` executa CLI e Apple VoiceCore contra binários separados
 e Realtime local simulado. Nenhum desses comandos usa AWS. Evidências e limites

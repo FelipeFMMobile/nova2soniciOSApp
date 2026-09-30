@@ -1,4 +1,4 @@
-package gateway
+package fake
 
 import (
 	"context"
@@ -11,16 +11,15 @@ import (
 	"stsmodel.local/voicewire"
 )
 
-// inProcessFakeFactory is a deterministic transport fixture. The real
-// personal assistant implementation lives in its own application module.
-type inProcessFakeFactory struct{ server *Server }
+// factory serves the deterministic demo through the same remote session contract.
+type factory struct{ server *Server }
 
 type inbound struct {
 	event protocol.Event
 	err   error
 }
 
-func (f inProcessFakeFactory) Open(ctx context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
+func (f factory) Open(ctx context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
 	if f.server == nil || start.SessionID == "" || start.Provider != "fake" {
 		return nil, errors.New("invalid fake agent session")
 	}

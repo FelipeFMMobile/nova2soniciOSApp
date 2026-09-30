@@ -27,9 +27,6 @@ func TestVoiceHandlerUsesRemoteAgentSession(t *testing.T) {
 	remote := httptest.NewServer(handler)
 	defer remote.Close()
 	cfg := testConfig()
-	cfg.AgentMode = "remote"
-	cfg.AgentPromptFile = ""
-	cfg.MCPBackend = ""
 	cfg.DefaultAgentID = "personal-assistant"
 	cfg.AgentCatalog = []agentwire.Endpoint{{AgentID: "personal-assistant", URL: "ws" + strings.TrimPrefix(remote.URL, "http") + "/v1/session", Token: "internal-token"}}
 	s, _, url := setup(t, cfg)

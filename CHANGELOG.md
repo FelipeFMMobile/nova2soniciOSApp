@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.11.0 — remoção do legado no gateway
+
+- gateway exclusivamente remoto, sem imports de agente, Nova, MCP, prompt ou
+  regras de turno; builds independentes verificados em diretórios isolados;
+- Nova e fake executam em `personal-assistant-agent`; `make dev` inicia os dois
+  processos também no ambiente fake, sem Docker/AWS;
+- regressões semânticas preservadas em `tests/voice`, atravessando o gateway real;
+- `STS_AGENT_MODE=inprocess` e configuração semântica no gateway são rejeitados;
+- rollback exige o conjunto de binários/configuração `v0.10.x`, preservado na tag.
+
+| Componente | Contrato |
+| --- | --- |
+| Gateway + agente `v0.11.x` | Agent Session v1 |
+| Apple / CLI | Voice v1, sem atualização de produção |
+| Host Context / Notes / Agenda | v1, inalterados |
+
+O avanço para esta minor foi solicitado após o usuário relatar boa execução da
+Fase 5. `v0.10.0` continua disponível com o caminho in-process. Sem deploy ou
+alteração dos serviços ativos durante a implementação.
+
 ## v0.10.0 — Agent Session v1 e rollout local
 
 - transporte remoto padrão com heartbeat e métricas; rollback in-process durante

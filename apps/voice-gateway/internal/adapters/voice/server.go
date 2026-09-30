@@ -14,9 +14,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"stsmodel.local/agentwire"
-	assistant "stsmodel.local/personal-assistant-agent/inprocess"
-	"stsmodel.local/voice-gateway/internal/adapters/provider"
 	"stsmodel.local/voice-gateway/internal/bootstrap/config"
+	"stsmodel.local/voicewire"
 )
 
 type Counters struct {
@@ -77,7 +76,6 @@ func (c *Counters) recordFirstAudio(duration time.Duration) {
 type Server struct {
 	cfg          config.Config
 	logger       *slog.Logger
-	voice        provider.VoiceProvider
 	mux          *http.ServeMux
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -86,60 +84,30 @@ type Server struct {
 	connections  map[*websocket.Conn]struct{}
 	wg           sync.WaitGroup
 	metrics      Counters
-	toolFactory  assistant.ToolFactory
 	agentFactory agentwire.AgentSessionFactory
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
-	if cfg.AgentMode == "" {
-		cfg.AgentMode = "remote"
-	}
 	if cfg.DefaultAgentID == "" {
 		cfg.DefaultAgentID = "personal-assistant"
 	}
-	if cfg.AgentMode == "remote" && (cfg.AgentPromptFile != "" || cfg.LiteLLMURL != "" || cfg.LiteLLMAPIKey != "" || cfg.LiteLLMModel != "" || cfg.MCPContextSecret != "" || cfg.MCPCommand != "" || cfg.MCPEvidencePath != "" || len(cfg.MCPServers) != 0 || len(cfg.LiteLLMServers) != 0 || len(cfg.MCPArgs) != 0 || len(cfg.MCPAllowedTools) != 0) {
-		return nil, fmt.Errorf("remote gateway must not receive model or MCP configuration")
-	}
 	if cfg.Provider != "fake" && cfg.Provider != "nova" {
-		return nil, fmt.Errorf("unsupported provider %q", cfg.Provider)
+		return nil, fmt.Errorf("unsupported provider")
 	}
-	if cfg.NovaMaxSessionAge == 0 {
-		cfg.NovaMaxSessionAge = 7*time.Minute + 30*time.Second
-	}
-	if cfg.MCPTimeout == 0 {
-		cfg.MCPTimeout = 10 * time.Second
-	}
-	if cfg.MCPTimeout <= 0 {
-		return nil, fmt.Errorf("MCP timeout must be positive")
-	}
-	if cfg.AgentMode == "inprocess" && cfg.Provider == "nova" && (cfg.LiteLLMURL == "" || cfg.LiteLLMAPIKey == "" || cfg.LiteLLMModel == "" || cfg.NovaMaxSessionAge <= 0) {
-		return nil, fmt.Errorf("Nova requires LiteLLM configuration and positive session age")
-	}
-	if cfg.MaxSessions <= 0 || cfg.MaxEventBytes <= 0 || cfg.ReadTimeout <= 0 || cfg.WriteTimeout <= 0 || cfg.IdleTimeout < time.Millisecond || cfg.TurnTimeout <= 0 {
+	if cfg.MaxSessions <= 0 || cfg.MaxEventBytes <= 0 || cfg.ReadTimeout <= 0 || cfg.WriteTimeout <= 0 || cfg.IdleTimeout < time.Millisecond {
 		return nil, fmt.Errorf("gateway limits and timeouts must be positive")
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{cfg: cfg, logger: logger, voice: provider.Fake{}, mux: http.NewServeMux(), ctx: ctx, cancel: cancel, slots: make(chan struct{}, cfg.MaxSessions), connections: make(map[*websocket.Conn]struct{})}
-	if cfg.AgentMode == "remote" {
-		factory, err := agentwire.NewRemoteFactory(cfg.AgentCatalog)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-		s.agentFactory = factory
-	} else if cfg.Provider == "nova" {
-		_, err := assistant.New(cfg.Agent(), logger, s.agentHooks(), nil)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-		s.agentFactory = inProcessNovaFactory{server: s}
-	} else {
-		s.agentFactory = inProcessFakeFactory{server: s}
+	s := &Server{cfg: cfg, logger: logger, mux: http.NewServeMux(), ctx: ctx, cancel: cancel, slots: make(chan struct{}, cfg.MaxSessions), connections: make(map[*websocket.Conn]struct{})}
+	factory, err := agentwire.NewRemoteFactory(cfg.AgentCatalog)
+	if err != nil {
+		cancel()
+		return nil, err
 	}
+	s.agentFactory = factory
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "protocolVersion": 1})
 	})
@@ -147,25 +115,6 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	s.mux.HandleFunc("GET /v1/voice", s.authorize(s.handleVoice))
 	s.mux.HandleFunc("GET /v1/metrics", s.authorize(s.statistics))
 	return s, nil
-}
-
-func (s *Server) agentHooks() assistant.Hooks {
-	return assistant.Hooks{
-		Error:       func() { s.metrics.Errors.Add(1) },
-		Completed:   func() { s.metrics.Completed.Add(1) },
-		Interrupted: func() { s.metrics.Interrupted.Add(1) },
-		FirstAudio:  s.metrics.recordFirstAudio,
-	}
-}
-
-type inProcessNovaFactory struct{ server *Server }
-
-func (f inProcessNovaFactory) Open(ctx context.Context, start agentwire.AgentSessionStart) (agentwire.AgentSession, error) {
-	factory, err := assistant.New(f.server.cfg.Agent(), f.server.logger, f.server.agentHooks(), f.server.toolFactory)
-	if err != nil {
-		return nil, err
-	}
-	return factory.Open(ctx, start)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +137,7 @@ func (s *Server) authorize(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) providers(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"selected": s.cfg.Provider, "agentMode": s.cfg.AgentMode, "providers": []map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{"selected": s.cfg.Provider, "agentMode": "remote", "providers": []map[string]any{
 		{"id": "fake", "available": true, "speech": false, "inputSampleRate": 16000, "outputSampleRate": 24000},
 		{"id": "nova", "available": true, "speech": true, "inputSampleRate": 16000, "outputSampleRate": 24000, "requires": "LiteLLM Realtime and AWS Bedrock authorization"},
 	}})
@@ -228,4 +177,9 @@ func (s *Server) Close(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+type inbound struct {
+	event protocol.Event
+	err   error
 }

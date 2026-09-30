@@ -13,7 +13,8 @@ import (
 
 	"stsmodel.local/agentwire"
 	agentconfig "stsmodel.local/personal-assistant-agent/config"
-	"stsmodel.local/personal-assistant-agent/inprocess"
+	"stsmodel.local/personal-assistant-agent/internal/fake"
+	"stsmodel.local/personal-assistant-agent/session"
 )
 
 func main() {
@@ -23,7 +24,12 @@ func main() {
 		os.Exit(1)
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	factory, err := inprocess.New(config.Runtime, logger, inprocess.Hooks{}, nil)
+	var factory agentwire.AgentSessionFactory
+	if config.Runtime.Provider == "fake" {
+		factory = fake.New(config.Runtime.TurnTimeout, logger)
+	} else {
+		factory, err = session.New(config.Runtime, logger, session.Hooks{}, nil)
+	}
 	if err != nil {
 		logger.Error("personal assistant runtime rejected", "error", err)
 		os.Exit(1)

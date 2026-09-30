@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	mcp "stsmodel.local/mcpwire"
 	"testing"
 	"time"
@@ -153,28 +153,62 @@ type Gateway struct {
 func (g *Gateway) Close() { _ = g.cmd.Process.Kill(); _ = g.cmd.Wait() }
 func StartGateway(t *testing.T) *Gateway {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	address := AvailableAddress(t)
+	agentEnv := append(os.Environ(), "STS_AGENT_ADDRESS="+address, "STS_AGENT_TOKEN=test-internal-token")
+	StartService(t, "personal-assistant-agent", agentEnv, address)
+	catalog := `[{"id":"personal-assistant","endpoint":"ws://` + address + `/v1/session","protocol":"agent-session/v1","token_env":"STS_AGENT_TOKEN"}]`
+	env := []string{"STS_AGENT_TOKEN=test-internal-token", "STS_AGENT_CATALOG=" + catalog}
+	for _, key := range []string{"STS_PROVIDER", "STS_DEVELOPMENT_TOKEN"} {
+		if value := os.Getenv(key); value != "" {
+			env = append(env, key+"="+value)
+		}
+	}
+	return StartGatewayWithEnv(t, env)
+}
+func AvailableAddress(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	addr := ln.Addr().String()
-	ln.Close()
-	cmd := exec.Command(Binary("gateway"))
-	cmd.Env = append(os.Environ(), "STS_GATEWAY_ADDRESS="+addr, "STS_AGENT_MODE=inprocess")
-	if err = cmd.Start(); err != nil {
+	address := l.Addr().String()
+	l.Close()
+	return address
+}
+func StartGatewayWithEnv(t *testing.T, extra []string) *Gateway {
+	t.Helper()
+	address := AvailableAddress(t)
+	env := []string{}
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if !strings.HasPrefix(key, "STS_") && !strings.HasPrefix(key, "NOVA_") && !strings.HasPrefix(key, "AWS_") {
+			env = append(env, item)
+		}
+	}
+	env = append(env, extra...)
+	env = append(env, "STS_GATEWAY_ADDRESS="+address)
+	return StartService(t, "gateway", env, address)
+}
+func StartService(t *testing.T, name string, env []string, address string) *Gateway {
+	t.Helper()
+	cmd := exec.Command(Binary(name))
+	cmd.Env = env
+	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	g := &Gateway{"http://" + addr, cmd}
+	g := &Gateway{"http://" + address, cmd}
 	t.Cleanup(g.Close)
 	client := http.Client{Timeout: time.Second}
-	for i := 0; i < 100; i++ {
-		r, e := client.Get(g.URL + "/health")
+	for i := 0; i < 150; i++ {
+		r, e := client.Get(g.URL + "/healthz")
 		if e == nil {
 			r.Body.Close()
-			return g
+			if r.StatusCode == 200 {
+				return g
+			}
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatal(fmt.Sprintf("gateway did not start at %s", addr))
+	t.Fatalf("%s did not start at %s", name, address)
 	return nil
 }
