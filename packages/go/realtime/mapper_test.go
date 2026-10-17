@@ -84,3 +84,29 @@ func TestInterruptedSignalAndInvalidPCM(t *testing.T) {
 		t.Fatal("accepted odd PCM")
 	}
 }
+
+func TestProviderGreetingBeforeMicrophonePreservesAudioAndBargeIn(t *testing.T) {
+	m := NewMapper(nil)
+	opening := m.StartAssistant("greeting")
+	if len(opening) != 2 || opening[0].Type != protocol.TurnStarted {
+		t.Fatal(opening)
+	}
+	m.QueueInput("microphone")
+	audioStart(t, m, "greeting-audio")
+	e := mapped(t, m, Event{Kind: "audioOutput", ContentID: "greeting-audio", Audio: "AAAAAA=="})
+	if len(e) != 1 || e[0].TurnID != "greeting" || e[0].Sequence != 1 {
+		t.Fatal(e)
+	}
+	// Registering the microphone never cuts the greeting; actual speech still can.
+	interrupted := mapped(t, m, Event{Kind: "interrupted"})
+	if len(interrupted) == 0 || interrupted[0].Type != protocol.TurnInterrupted {
+		t.Fatal(interrupted)
+	}
+	user(t, m, "user-1", "sim")
+	if m.TurnID != "microphone" {
+		t.Fatal(m.TurnID)
+	}
+	if stale := mapped(t, m, Event{Kind: "audioOutput", ContentID: "greeting-audio", Audio: "AAAAAA=="}); len(stale) != 0 {
+		t.Fatal(stale)
+	}
+}

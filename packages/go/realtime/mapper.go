@@ -33,6 +33,20 @@ func NewMapper(history []HistoryMessage) *Mapper {
 	return &Mapper{State: session.Idle, History: history, answered: map[string]bool{}, cancelled: map[string]bool{}, contents: map[string]*content{}, users: map[string]string{}}
 }
 
+// StartAssistant allows a provider-initiated greeting before the first user turn.
+func (m *Mapper) StartAssistant(id string) []protocol.Event {
+	m.TurnID = id
+	m.State = session.Responding
+	m.started = time.Now()
+	m.waitingUser = false
+	m.sequence = 0
+	return []protocol.Event{{Type: protocol.TurnStarted, TurnID: id}, m.state()}
+}
+
+// QueueInput binds the microphone turn without cancelling an opening greeting.
+// Actual VAD/speech events still interrupt through the normal provider path.
+func (m *Mapper) QueueInput(id string) { m.nextInput = id }
+
 func (m *Mapper) StartInput(id string) []protocol.Event {
 	var events []protocol.Event
 	if m.State == session.Responding {

@@ -1,0 +1,19 @@
+{
+  "name": "mcp-identity",
+  "language": "java",
+  "build": [
+    "./mvnw",
+    "-B",
+    "verify"
+  ],
+  "test": [
+    "./mvnw",
+    "-B",
+    "test"
+  ],
+  "run": [
+    "java",
+    "-jar",
+    "target/mcp-identity-0.1.0.jar"
+  ]
+}

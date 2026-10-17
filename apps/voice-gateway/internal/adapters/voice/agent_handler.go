@@ -17,10 +17,22 @@ import (
 // AgentSession port. Model, semantic history, tools and confirmation execute
 // behind the configured factory.
 func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
+	version := 1
+	if r.URL.Path == "/v2/voice" {
+		version = 2
+	}
 	principal, ok := r.Context().Value(principalContextKey{}).(agentwire.Principal)
 	if !ok || agentwire.ValidatePrincipal(principal) != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authenticated principal missing"})
 		return
+	}
+	if version == 2 {
+		var authErr error
+		principal, authErr = s.accountPrincipal(r)
+		if authErr != nil {
+			writeJSON(w, 401, map[string]string{"error": "authentication_required"})
+			return
+		}
 	}
 	select {
 	case s.slots <- struct{}{}:
@@ -60,11 +72,11 @@ func (s *Server) handleVoice(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(s.cfg.MaxEventBytes)
 	_ = conn.SetReadDeadline(time.Now().Add(s.cfg.ReadTimeout))
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(s.cfg.IdleTimeout)) })
-	go readVoiceEvents(ctx, cancel, conn, in, readDone, s.cfg.IdleTimeout)
+	go readVoiceEvents(ctx, cancel, conn, in, readDone, s.cfg.IdleTimeout, version)
 
 	sessionID := rand.Text()
 	write := func(event protocol.Event) error {
-		event.Version = protocol.Version
+		event.Version = version
 		event.SessionID = sessionID
 		_ = conn.SetWriteDeadline(time.Now().Add(s.cfg.WriteTimeout))
 		return conn.WriteJSON(event)
@@ -112,7 +124,28 @@ start:
 				}
 				continue
 			}
-			agent, err = s.agentFactory.Open(ctx, agentwire.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: s.cfg.DefaultAgentID, Provider: s.cfg.Provider, Principal: principal})
+			selected := s.cfg.DefaultAgentID
+			if version == 2 && input.event.AgentID != "" {
+				selected = input.event.AgentID
+			}
+			selectedPrincipal := principal
+			found := false
+			for _, endpoint := range s.cfg.AgentCatalog {
+				if endpoint.AgentID == selected {
+					found = true
+					if version == 1 && endpoint.Protocol == agentwire.ProtocolV2 {
+						found = false
+					}
+					if endpoint.Protocol != agentwire.ProtocolV2 {
+						selectedPrincipal = s.cfg.Principal
+					}
+				}
+			}
+			if !found {
+				_ = sendError("agent_unavailable", "agent is not available")
+				return
+			}
+			agent, err = s.agentFactory.Open(ctx, agentwire.AgentSessionStart{SessionID: sessionID, RequestID: input.event.RequestID, AgentID: selected, Provider: s.cfg.Provider, Principal: selectedPrincipal})
 			if err != nil {
 				_ = sendError("provider_unavailable", "agent session could not start")
 				return
@@ -190,7 +223,7 @@ start:
 	}
 }
 
-func readVoiceEvents(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, in chan<- inbound, done chan<- struct{}, idleTimeout time.Duration) {
+func readVoiceEvents(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, in chan<- inbound, done chan<- struct{}, idleTimeout time.Duration, version int) {
 	defer cancel()
 	defer close(done)
 	defer close(in)
@@ -200,7 +233,10 @@ func readVoiceEvents(ctx context.Context, cancel context.CancelFunc, conn *webso
 			return
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(idleTimeout))
-		event, decodeErr := protocol.DecodeClient(data)
+		event, decodeErr := protocol.DecodeClientVersion(data, version)
+		if decodeErr == nil && event.Version != version {
+			decodeErr = errors.New("protocol version mismatch")
+		}
 		if kind != websocket.TextMessage {
 			decodeErr = errors.New("only JSON text frames are accepted")
 		}
@@ -253,6 +289,9 @@ func voiceEventFromAgent(event agentwire.AgentEvent) (protocol.Event, error) {
 		converted.Type = protocol.SessionRenewed
 	case agentwire.AgentSessionClosed:
 		converted.Type = protocol.SessionStopped
+	case "ui.a2ui":
+		converted.Type = "ui.a2ui"
+		converted.UI = event.UI
 	case agentwire.OutputAudio:
 		if len(event.Audio) == 0 {
 			return protocol.Event{}, errors.New("empty agent audio")

@@ -43,3 +43,7 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Java / Maven
+**/target/
+**/.mvn/wrapper/maven-wrapper.jar

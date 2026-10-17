@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 )
 
 type Config struct {
+	IdentityURL, IdentityToken                                              string
 	Environment, GatewayAddress, DevelopmentToken, Provider, DefaultAgentID string
 	AgentCatalog                                                            []agentwire.Endpoint
 	Principal                                                               agentwire.Principal
@@ -66,6 +68,15 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.AgentCatalog = catalog
+	cfg.IdentityURL = os.Getenv("STS_IDENTITY_URL")
+	cfg.IdentityToken = os.Getenv("STS_IDENTITY_SERVICE_TOKEN")
+	if cfg.IdentityURL != "" {
+		u, err := url.Parse(cfg.IdentityURL)
+		if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || (u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1"))) {
+			return Config{}, fmt.Errorf("identity URL must be loopback or HTTPS")
+		}
+		cfg.IdentityURL = strings.TrimRight(cfg.IdentityURL, "/")
+	}
 	known := false
 	for _, e := range catalog {
 		known = known || e.AgentID == cfg.DefaultAgentID
@@ -106,14 +117,14 @@ func loadAgentCatalog(raw string) ([]agentwire.Endpoint, error) {
 	}
 	endpoints := make([]agentwire.Endpoint, 0, len(entries))
 	for _, entry := range entries {
-		if entry.Protocol != agentwire.Protocol || !environmentName.MatchString(entry.TokenEnv) || !strings.HasPrefix(entry.TokenEnv, "STS_AGENT_TOKEN") {
+		if (entry.Protocol != agentwire.Protocol && entry.Protocol != agentwire.ProtocolV2) || !environmentName.MatchString(entry.TokenEnv) || !strings.HasPrefix(entry.TokenEnv, "STS_AGENT_TOKEN") {
 			return nil, fmt.Errorf("agent catalog protocol or token reference is invalid")
 		}
 		token, ok := os.LookupEnv(entry.TokenEnv)
 		if !ok || token == "" {
 			return nil, fmt.Errorf("agent catalog token reference is missing")
 		}
-		endpoints = append(endpoints, agentwire.Endpoint{AgentID: entry.ID, URL: entry.Endpoint, Token: token})
+		endpoints = append(endpoints, agentwire.Endpoint{Protocol: entry.Protocol, AgentID: entry.ID, URL: entry.Endpoint, Token: token})
 	}
 	if _, err := agentwire.NewRemoteFactory(endpoints); err != nil {
 		return nil, err

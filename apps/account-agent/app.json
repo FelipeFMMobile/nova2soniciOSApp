@@ -1,0 +1,1 @@
+{"name":"account-agent","language":"go","build":["go","build","-o","../../bin/account-agent","./cmd/account-agent"],"test":["go","test","./..."],"run":["../../bin/account-agent"]}

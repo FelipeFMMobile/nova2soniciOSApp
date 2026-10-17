@@ -168,3 +168,34 @@ uma linguagem de integração explícita (schemas, resultados, erros e contexto
 assinado). O futuro MCP Spring é possibilidade arquitetural, não domínio
 identificado no código. Dentro de cada monólito, módulos usam APIs internas;
 entre apps, contratos de processo/rede. Não há necessidade atual de event bus.
+
+## Adendo de implementação — Conta, 2026-10-06
+
+O inventário histórico acima permanece referente à base de setembro. A revisão
+atual aplica as seis fases da skill: conceitos, linguagem, classificação, coesão,
+problemas e limites. Evidências e validação: [registro](run-2026-10-06.md).
+
+| Contexto atual | Conceitos e linguagem | Classificação | Dono dos dados / integração |
+| --- | --- | --- | --- |
+| Identidade | login, transação, fator, vínculo, sessão, renovação, revogação | Generic | `mcp-identity`: PostgreSQL próprio; OAuth Cognito e APIs de sessão |
+| Perfil | meu perfil, cinco campos, versão, alterações, confirmação, replay | Supporting | `mcp-profile`: PostgreSQL e ledger próprios; API de identidade |
+| Conversação Conta | instrução de login, apresentação segura, alteração pendente | Core, hipótese do produto | `account-agent`: estado efêmero; contratos MCP de identidade/perfil |
+
+`IdentityService.complete/refresh/session` controla identidade e sessão;
+`ProfileService.owner/update` controla acesso, versão e ledger. “Sessão” de
+identidade é autenticação durável; AgentSession é uma conexão efêmera. O gateway
+traduz esses modelos, sem consultar bancos. `CLIENTE_CODE` é identificador
+pseudônimo persistido; não é fator de autenticação nem autorização por posse.
+
+Coesão estática bruta 0–10, sem histórico de coalteração: Identidade L3/U3/D2/M?
+=8–10; Perfil L3/U3/D2/M?=8–10; Identidade↔Perfil L1/U2/D0/M?=3–5. A dependência
+é customer/supplier por API, não compartilhamento de entidades ou tabelas.
+Transportes `realtime`, `agentwire`, `mcpwire`, `voicewire` e executor genérico
+`actionruntime` são bibliotecas técnicas. Prompts e políticas permanecem por agente.
+
+Problemas altos tratados: principal fabricado pelo modelo (gateway valida),
+acesso cruzado (sessão assinada + introspecção), alteração sem confirmação
+(executor e servidor verificam), repetição de efeito (ledger transacional),
+credenciais em transcrições (canal nativo separado). Riscos pendentes: evidência
+real de MFA, retorno de suspensão no dispositivo e ensaio Nova de perfil. Não
+marcar esses critérios concluídos por inferência a partir do modo fake.

@@ -9,7 +9,7 @@ import (
 )
 
 // Validate wire formatting only. Never guess a date or grant permission to mutate.
-func datetimeFormatError(args json.RawMessage, dateFields []string) *mcp.Result {
+func DateTimeFormatError(args json.RawMessage, dateFields []string) *mcp.Result {
 	var values map[string]json.RawMessage
 	if json.Unmarshal(args, &values) != nil {
 		return nil

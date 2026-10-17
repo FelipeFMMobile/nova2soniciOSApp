@@ -5,6 +5,8 @@ go 1.27.0
 require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	golang.org/x/text v0.14.0 // indirect
+	stsmodel.local/actionruntime v0.0.0 // indirect
+	stsmodel.local/realtime v0.0.0 // indirect
 )
 
 replace stsmodel.local/mcpwire => ./packages/go/mcpwire
@@ -25,3 +27,7 @@ replace stsmodel.local/voicewire => ./packages/go/voicewire
 replace stsmodel.local/testkit => ./packages/go/testkit
 
 replace stsmodel.local/personal-assistant-agent => ./apps/personal-assistant-agent
+
+replace stsmodel.local/realtime => ./packages/go/realtime
+
+replace stsmodel.local/actionruntime => ./packages/go/actionruntime

@@ -245,3 +245,21 @@ Notes é genérico. O primeiro domínio Spring ainda não foi definido. Transpor
 remoto será validado antes de trocar a composição stdio; bibliotecas Go
 são distribuídas junto do checkout nesta entrega. Essas incertezas não impedem separar regras e persistência
 nas fases iniciais. Nenhuma delas exige criar microserviços adicionais agora.
+
+## Extensão Conta — 2026-10-06
+
+A migração anterior permanece registrada nas fases existentes. A extensão adiciona
+`account-agent` (Go), `mcp-identity` e `mcp-profile` (Spring/Java 21), com bancos
+independentes e contratos mantidos pelos fornecedores. [Execução e aceite](account-development.md).
+
+Ordem: contratos v2 e builds independentes; identidade/OAuth e fake; Conta/Apple;
+perfil/guardrails; integração local; ensaio Cognito/SES e dispositivo. Código das
+cinco primeiras etapas está neste checkout, sujeito aos gates do registro atual;
+ensaios reais continuam pendentes. V1 permanece para Notes/Agenda e v2 é explícito
+para Conta. Rollback: retirar Conta do catálogo e preservar os volumes, iniciando
+as opções anteriores do supervisor. Nenhuma migração de dados Notes/Agenda.
+
+Novas aplicações publicam contratos e manifestos próprios. Nova linguagem não
+precisa ser um domínio; novas regras de negócio não entram no gateway. O catálogo
+é a dependência permitida entre host e agente. A inclusão de outro fluxo nativo
+que exija novos controles pode demandar evolução explícita de contrato do cliente.

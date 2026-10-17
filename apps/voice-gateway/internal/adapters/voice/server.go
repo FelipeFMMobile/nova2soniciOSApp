@@ -118,6 +118,17 @@ func New(cfg config.Config, logger *slog.Logger) (*Server, error) {
 	})
 	s.mux.HandleFunc("GET /v1/providers", s.authorize(s.providers))
 	s.mux.HandleFunc("GET /v1/voice", s.authorize(s.handleVoice))
+	if cfg.IdentityURL != "" {
+		s.mux.HandleFunc("GET /v2/voice", s.authorize(s.handleVoice))
+		s.mux.HandleFunc("POST /v2/auth/{action}", s.authorize(s.accountControl))
+		s.mux.HandleFunc("GET /v2/agents", s.authorize(func(w http.ResponseWriter, r *http.Request) {
+			ids := []string{}
+			for _, e := range cfg.AgentCatalog {
+				ids = append(ids, e.AgentID)
+			}
+			writeJSON(w, 200, map[string]any{"agents": ids})
+		}))
+	}
 	s.mux.HandleFunc("GET /v1/metrics", s.authorize(s.statistics))
 	return s, nil
 }

@@ -51,26 +51,30 @@ type Tool struct {
 }
 
 type Event struct {
-	Version    int      `json:"version"`
-	Type       string   `json:"type"`
-	SessionID  string   `json:"sessionId,omitempty"`
-	TurnID     string   `json:"turnId,omitempty"`
-	Sequence   uint64   `json:"sequence,omitempty"`
-	Provider   string   `json:"provider,omitempty"`
-	RequestID  string   `json:"requestId,omitempty"`
-	State      string   `json:"state,omitempty"`
-	Audio      string   `json:"audio,omitempty"`
-	SampleRate int      `json:"sampleRate,omitempty"`
-	Text       string   `json:"text,omitempty"`
-	Role       string   `json:"role,omitempty"`
-	Stage      string   `json:"stage,omitempty"`
-	Code       string   `json:"code,omitempty"`
-	Message    string   `json:"message,omitempty"`
-	Metrics    *Metrics `json:"metrics,omitempty"`
-	Tool       *Tool    `json:"tool,omitempty"`
+	AgentID    string          `json:"agentId,omitempty"`
+	UI         json.RawMessage `json:"ui,omitempty"`
+	Version    int             `json:"version"`
+	Type       string          `json:"type"`
+	SessionID  string          `json:"sessionId,omitempty"`
+	TurnID     string          `json:"turnId,omitempty"`
+	Sequence   uint64          `json:"sequence,omitempty"`
+	Provider   string          `json:"provider,omitempty"`
+	RequestID  string          `json:"requestId,omitempty"`
+	State      string          `json:"state,omitempty"`
+	Audio      string          `json:"audio,omitempty"`
+	SampleRate int             `json:"sampleRate,omitempty"`
+	Text       string          `json:"text,omitempty"`
+	Role       string          `json:"role,omitempty"`
+	Stage      string          `json:"stage,omitempty"`
+	Code       string          `json:"code,omitempty"`
+	Message    string          `json:"message,omitempty"`
+	Metrics    *Metrics        `json:"metrics,omitempty"`
+	Tool       *Tool           `json:"tool,omitempty"`
 }
 
-func DecodeClient(data []byte) (Event, error) {
+func DecodeClient(data []byte) (Event, error) { return DecodeClientVersion(data, Version) }
+
+func DecodeClientVersion(data []byte, expected int) (Event, error) {
 	var event Event
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -80,11 +84,14 @@ func DecodeClient(data []byte) (Event, error) {
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return Event{}, fmt.Errorf("expected one JSON event")
 	}
-	if event.Version != Version {
+	if (expected != Version && expected != 2) || event.Version != expected {
 		return Event{}, fmt.Errorf("unsupported protocol version")
 	}
 	if (event.SessionID != "" && !ValidID(event.SessionID)) || (event.TurnID != "" && !ValidID(event.TurnID)) {
 		return Event{}, fmt.Errorf("identifiers must be 1-128 ASCII letters, digits, underscores or hyphens")
+	}
+	if len(event.UI) != 0 || event.AgentID != "" && (event.Version != 2 || event.Type != SessionStart || !ValidID(event.AgentID)) {
+		return Event{}, fmt.Errorf("invalid v2 fields")
 	}
 	switch event.Type {
 	case SessionStart:

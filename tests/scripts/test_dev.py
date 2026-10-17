@@ -19,15 +19,40 @@ spec.loader.exec_module(dev)
 
 
 class DevTests(unittest.TestCase):
-    def test_existing_service_requires_confirmation_and_decline_preserves_it(self):
-        with patch.object(dev, "check_port", side_effect=RuntimeError("busy")), \
+    def test_existing_service_is_stopped_without_another_prompt(self):
+        with patch.object(dev, "check_port", side_effect=[RuntimeError("busy"), None]), \
              patch.object(dev.shutil, "which", return_value="/usr/sbin/lsof"), \
              patch.object(dev.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "123\n", "")), \
              patch.object(dev, "process_identity", return_value=("gateway", "started")), \
-             patch.object(dev, "yes", return_value=False), patch.object(dev.os, "kill") as kill:
-            with self.assertRaises(RuntimeError):
-                dev.ensure_ports([(8080, "127.0.0.1")])
-            kill.assert_not_called()
+             patch.object(dev, "yes") as prompt, patch.object(dev.os, "kill") as kill:
+            dev.ensure_ports([(8080, "127.0.0.1")])
+            prompt.assert_not_called()
+            kill.assert_called_once_with(123, signal.SIGTERM)
+
+    def test_account_agent_and_legacy_bridge_are_recognized_across_worktrees(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory)
+            (checkout / 'services/nova-bridge').mkdir(parents=True)
+            for name, same_repo in [('account-agent', True), ('nova-bridge', True), ('nova-bridge', False)]:
+                with self.subTest(name=name, same_repo=same_repo):
+                    def query(command, **kwargs):
+                        if command[0] == 'git':
+                            value = '/shared/.git' if same_repo or command[2] == str(dev.ROOT) else '/other/.git'
+                        elif 'uid=' in command:
+                            value = str(os.getuid())
+                        elif 'lstart=' in command:
+                            value = 'started'
+                        elif 'args=' in command:
+                            value = '/usr/bin/python3 -m nova_bridge.server'
+                        elif 'cwd' in command:
+                            value = f'p123\nfcwd\nn{checkout}'
+                        else:
+                            value = f'p123\nftxt\nn{checkout / "bin" / name}'
+                        return subprocess.CompletedProcess(command, 0, value, '')
+                    with patch.object(dev.subprocess, 'run', side_effect=query):
+                        result = dev.process_identity(123)
+                    expected = ('account-agent' if name == 'account-agent' else 'nova-bridge (legado)', 'started')
+                    self.assertEqual(result, expected if same_repo else None)
 
     def test_unknown_listener_is_never_stopped(self):
         with patch.object(dev, "check_port", side_effect=RuntimeError("busy")), \

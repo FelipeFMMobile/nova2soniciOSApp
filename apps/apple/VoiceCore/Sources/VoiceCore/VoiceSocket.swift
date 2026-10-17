@@ -15,6 +15,7 @@ import OSLog
     private var writer: Task<Void, Never>?
     private var deadline: Task<Void, Never>?
     private var generation = 0
+    private var protocolVersion = 1
 
     public nonisolated init() {}
     public func configure(onEvent: @escaping @MainActor @Sendable (VoiceEvent) -> Void,
@@ -22,13 +23,14 @@ import OSLog
         self.onEvent = onEvent; self.onFailure = onFailure
     }
     public var audioFramesSent: Int { sentAudio }
-    public func connect(url: String, token: String, provider: String, requestId: String) throws {
+    public func connect(url: String, token: String, provider: String, requestId: String, agentId: String? = nil, device: String? = nil, accountToken: String? = nil) throws {
         try Task.checkCancellation()
         let endpoint = try GatewayConfiguration.validate(url)
         guard ["nova", "fake"].contains(provider), !token.utf8.contains(10), !token.utf8.contains(13), token.utf8.count <= 4096 else { throw VoiceFailure.invalidConfiguration }
         disconnect()
         sentAudio = 0; receivedAudio = 0
         log.info("Connecting voice WebSocket (credentials and endpoint omitted)")
+        protocolVersion = endpoint.path == "/v2/voice" ? 2 : 1
         let epoch = generation
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil; configuration.urlCache = nil
@@ -36,6 +38,9 @@ import OSLog
         let session = URLSession(configuration: configuration)
         var request = URLRequest(url: endpoint)
         if !token.isEmpty { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let device { request.setValue(device, forHTTPHeaderField: "X-STS-Device") }
+        if let accountToken { request.setValue(accountToken, forHTTPHeaderField: "X-STS-Account") }
+        let expectedVersion = protocolVersion
         let socket = session.webSocketTask(with: request)
         socket.maximumMessageSize = 512 * 1024
         self.session = session; self.socket = socket
@@ -72,7 +77,8 @@ import OSLog
                     let message = try await socket.receive()
                     guard let self, self.generation == epoch else { return }
                     guard case .string(let text) = message, let data = text.data(using: .utf8) else { throw VoiceFailure.invalidEvent }
-                    let event = try VoiceEvent.decode(data)
+                    let event = try VoiceEvent.decode(data, expectedVersion: expectedVersion)
+                    guard event.version == expectedVersion else { throw VoiceFailure.invalidEvent }
                     if event.audio != nil { self.receivedAudio += 1 }
                     if event.audio == nil || self.receivedAudio == 1 || self.receivedAudio % 50 == 0 {
                         self.log.info("RECV \(VoiceDiagnostics.summary(event), privacy: .public)")
@@ -89,10 +95,12 @@ import OSLog
             do { try await Task.sleep(for: .seconds(30)); self?.fail(.disconnected, epoch: epoch) } catch {}
         }
         socket.resume()
-        try send(VoiceEvent(type: "session.start", provider: provider, requestId: requestId))
+        var start = VoiceEvent(type: "session.start", provider: provider, requestId: requestId); start.agentId = agentId
+        try send(start)
     }
 
     public func send(_ event: VoiceEvent) throws {
+        var event = event; event.version = protocolVersion
         guard let outbound else { throw VoiceFailure.disconnected }
         do { try outbound.enqueueControl(event) }
         catch {
@@ -103,6 +111,7 @@ import OSLog
 
     /// Use sequentially from the microphone consumer; never call on the render thread.
     public func sendAudio(_ event: VoiceEvent) async throws {
+        var event = event; event.version = protocolVersion
         guard event.type == "audio.append" else { throw VoiceFailure.invalidEvent }
         guard let outbound else { throw VoiceFailure.disconnected }
         let epoch = generation

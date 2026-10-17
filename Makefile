@@ -9,6 +9,8 @@ APPLE_SIMULATOR_ID ?= 599499E4-DD38-4C6C-9459-D4FDA8B2AE43
 .PHONY: build test race vet gateway agent mcp mcp-build agenda-build mcp-gateway fmt check voice-demo voice-cancel nova-demo nova-barge-demo
 .PHONY: apple-core-test apple-build-macos apple-build-ios apple-ui-test
 .PHONY: dev dev-plan dev-test architecture-diagram
+.PHONY: java-test account
+.PHONY: account-smoke account-ui-test
 .PHONY: litellm-up litellm-down litellm-privacy-audit litellm-redact-history
 
 litellm-up:
@@ -31,6 +33,19 @@ dev-plan:
 
 dev-test:
 	python3 -m unittest discover -s tests/scripts -v
+
+java-test:
+	cd apps/mcp-identity && ./mvnw -B verify
+	cd apps/mcp-profile && ./mvnw -B verify
+
+account:
+	env GOCACHE=$(GOCACHE) go run ./apps/account-agent/cmd/account-agent
+
+account-smoke:
+	python3 scripts/account_smoke.py
+
+account-ui-test:
+	python3 scripts/account_smoke.py --apple-ui --simulator $(APPLE_SIMULATOR_ID)
 
 architecture-diagram:
 	mkdir -p /private/tmp/sts-swift-cache docs/images
@@ -79,7 +94,7 @@ mcp-gateway:
 	python3 scripts/dev.py --mcps notes
 
 fmt:
-	gofmt -w apps/voice-gateway apps/personal-assistant-agent apps/voice-client apps/mcp-notes apps/mcp-agenda packages/go tests
+	gofmt -w apps/voice-gateway apps/personal-assistant-agent apps/account-agent apps/voice-client apps/mcp-notes apps/mcp-agenda packages/go tests
 
 check: build test race vet isolated
 

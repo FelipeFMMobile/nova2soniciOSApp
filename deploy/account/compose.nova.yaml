@@ -1,0 +1,8 @@
+# Explicit opt-in for Nova. Only LiteLLM receives the AWS profile mount.
+services:
+  litellm:
+    environment:
+      AWS_PROFILE: ${AWS_PROFILE:-default}
+      AWS_SDK_LOAD_CONFIG: "1"
+    volumes:
+      - ${HOME}/.aws:/root/.aws:ro

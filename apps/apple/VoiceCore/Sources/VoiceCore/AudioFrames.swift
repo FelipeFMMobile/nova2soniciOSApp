@@ -20,7 +20,7 @@ public enum GatewayConfiguration {
     public static func validate(_ raw: String) throws -> URL {
         guard raw.utf8.count <= 1024, let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = url.scheme, ["ws", "wss"].contains(scheme),
-              let host = url.host, !host.isEmpty, url.path == "/v1/voice",
+              let host = url.host, !host.isEmpty, ["/v1/voice", "/v2/voice"].contains(url.path),
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { throw VoiceFailure.invalidConfiguration }
         return url
     }

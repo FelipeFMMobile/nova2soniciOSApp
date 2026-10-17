@@ -13,19 +13,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"stsmodel.local/actionruntime"
 )
 
 //go:embed */profile.json
 var builtins embed.FS
 
-type Profile struct {
-	Policy              string   `json:"policy"`
-	Direct              bool     `json:"direct,omitempty"`
-	ConfirmationPhrase  string   `json:"confirmation_phrase,omitempty"`
-	AllowUIConfirmation bool     `json:"allow_ui_confirmation,omitempty"`
-	DateTimeFields      []string `json:"datetime_fields,omitempty"`
-	IntentPattern       string   `json:"intent_pattern,omitempty"`
-}
+type Profile = orchestrator.Profile
 type Registry map[string]Profile
 
 func decode(data []byte, r Registry) error {

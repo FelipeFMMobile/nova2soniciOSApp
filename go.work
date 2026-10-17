@@ -1,6 +1,9 @@
 go 1.27.0
 
 use (
+	./packages/go/actionruntime
+	./packages/go/realtime
+	./apps/account-agent
 	.
 	./apps/voice-gateway
 	./apps/personal-assistant-agent

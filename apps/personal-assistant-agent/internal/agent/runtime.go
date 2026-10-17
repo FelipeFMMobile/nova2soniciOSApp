@@ -10,7 +10,7 @@ import (
 	"stsmodel.local/mcpwire"
 	agentconfig "stsmodel.local/personal-assistant-agent/config"
 	"stsmodel.local/personal-assistant-agent/internal/actions"
-	"stsmodel.local/personal-assistant-agent/internal/adapters/nova"
+	"stsmodel.local/realtime"
 	"stsmodel.local/voicewire"
 )
 

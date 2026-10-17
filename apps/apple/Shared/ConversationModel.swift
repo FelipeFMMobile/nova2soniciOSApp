@@ -5,6 +5,26 @@ import OSLog
 
 @MainActor final class ConversationModel: ObservableObject {
     @Published var conversation = ConversationState()
+    @Published var selectedAgent = "personal-assistant" { didSet { if oldValue != selectedAgent { dismissAccountLogin(); conversation = ConversationState(); accountSurface = AccountSurface() } } }
+    @Published var accountSurface = AccountSurface()
+    let account = AccountSession()
+    @Published var showAccountLogin = false
+    var awaitingAccountConsent: Bool { active && conversation.operations.contains { $0.id == "account-login-consent" && $0.needsConfirmation } }
+    func answerAccountWelcome(_ approved: Bool) { confirmAccount("account-login-consent", approved: approved) }
+    func dismissAccountLogin() { account.cancelLogin(); showAccountLogin = false; accountSurface = AccountSurface(); finish() }
+    func authenticateAccount() {
+        guard let transaction = accountSurface.transactionId, !account.busy else { return }
+        finish()
+        Task {
+            if await account.login(transaction: transaction) {
+                showAccountLogin = false; accountSurface = AccountSurface()
+                if selectedAgent == "account" { start() }
+            }
+        }
+    }
+    func signOutAccount() { finish(); accountSurface = AccountSurface(); conversation = ConversationState(); Task { await account.logout() } }
+    func confirmAccount(_ operationId: String, approved: Bool) { guard let sessionId = conversation.sessionId else { return }; Task { try? await socket.send(VoiceEvent(type: "tool.confirm", sessionId: sessionId, tool: VoiceTool(operationId: operationId, approved: approved))) } }
+
     @Published var url = Bundle.main.object(forInfoDictionaryKey: "STSGatewayURL") as? String ?? "ws://127.0.0.1:8080/v1/voice"
     @Published var token = Bundle.main.object(forInfoDictionaryKey: "STSGatewayToken") as? String ?? "local"
     @Published var provider = Bundle.main.object(forInfoDictionaryKey: "STSProvider") as? String ?? "nova"
@@ -65,7 +85,7 @@ import OSLog
     }
 
     func start() {
-        guard !active else { return }
+        guard !active, !account.busy else { return }
         errorMessage = nil
         inputLevel = 0; capturedBuffers = 0; capturedBytes = 0; sentFrames = 0
         audioWarning = nil
@@ -89,7 +109,13 @@ import OSLog
                     guard self?.epoch == generation else { return }; self?.fail(error)
                 })
                 guard !Task.isCancelled, self.epoch == generation else { return }
-                try await self.socket.connect(url: self.url, token: self.token, provider: self.provider, requestId: request)
+                if self.selectedAgent == "account" {
+                    try self.account.configure(url: self.url, token: self.token)
+                    await self.account.restore()
+                    guard !Task.isCancelled, self.epoch == generation else { return }
+                    var endpoint = URLComponents(string: self.url)!; endpoint.path = "/v2/voice"
+                    try await self.socket.connect(url: endpoint.string!, token: self.token, provider: self.provider, requestId: request, agentId: "account", device: self.account.device, accountToken: self.account.access)
+                } else { try await self.socket.connect(url: self.url, token: self.token, provider: self.provider, requestId: request) }
             } catch {
                 guard !Task.isCancelled, self.epoch == generation else { return }
                 self.fail((error as? VoiceFailure) ?? .disconnected)
@@ -114,7 +140,7 @@ import OSLog
             self.finish()
         }
     }
-    func shutdown() { finish() }
+    func shutdown() { dismissAccountLogin() }
     private func finish() {
         epoch += 1; active = false; stopping = false; playing = false
         startTask?.cancel(); startTask = nil; stopTask?.cancel(); stopTask = nil
@@ -135,6 +161,18 @@ import OSLog
 
     private func receive(_ event: VoiceEvent) {
         guard active else { return }
+        if selectedAgent == "account", event.sessionId == conversation.sessionId, event.type == "tool.result", event.tool?.name == "identity.logout", event.tool?.resultStatus == "signed_out", event.tool?.failed == false {
+            account.clearRevokedSession(); accountSurface = AccountSurface(); finish(); return
+        }
+        if event.type == "ui.a2ui" {
+            guard selectedAgent == "account", event.sessionId == conversation.sessionId, let ui = event.ui else { fail(.invalidEvent); return }
+            do {
+                try accountSurface.apply(ui)
+                if accountSurface.visible && accountSurface.transactionId != nil {
+                    finish(); showAccountLogin = true
+                }
+            } catch { fail(.invalidEvent) }; return
+        }
         do {
             let effects = try conversation.handle(event)
             for effect in effects {

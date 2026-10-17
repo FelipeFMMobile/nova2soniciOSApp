@@ -2,6 +2,15 @@ import XCTest
 @testable import VoiceCore
 
 final class VoiceCoreTests: XCTestCase {
+    func testAccountCancellationClearsPendingConfirmation() throws {
+        var state = try readyState()
+        _ = try state.handle(VoiceEvent(type: "tool.confirmation", sessionId: "session-1", tool: VoiceTool(operationId: "update-1", name: "profile.update_me")))
+        XCTAssertTrue(try XCTUnwrap(state.operations.first).needsConfirmation)
+        let result = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"content":[{"type":"text","text":"{\"status\":\"cancelled\"}"}],"isError":false}"#.utf8))
+        _ = try state.handle(VoiceEvent(type: "tool.result", sessionId: "session-1", tool: VoiceTool(operationId: "update-1", name: "profile.update_me", result: result)))
+        XCTAssertEqual(state.operations.first?.status, "Cancelado")
+        XCTAssertFalse(try XCTUnwrap(state.operations.first).needsConfirmation)
+    }
     func testToolArgumentsSurviveResultWithoutArguments() throws {
         var state = try readyState()
         let arguments: JSONValue = .object(["start": .string("2026-09-18T10:00:00-03:00")])

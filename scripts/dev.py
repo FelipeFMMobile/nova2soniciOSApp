@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import secrets
+import shlex
 import signal
 import socket
 import subprocess
@@ -295,11 +296,11 @@ def check_port(port: int, host: str = "127.0.0.1") -> None:
         try:
             probe.bind((host, port))
         except OSError as error:
-            raise RuntimeError(f"Porta {port} indisponível. Encerre o serviço anterior; nenhum processo existente será parado.") from error
+            raise RuntimeError(f"Porta {port} indisponível.") from error
 
 
 def process_identity(pid: int) -> tuple[str, str] | None:
-    """Recognize this checkout's services, not arbitrary processes named Python/gateway."""
+    """Recognize services from this Git repository, including its other worktrees."""
     def query(command: list[str]) -> str:
         result = subprocess.run(command, capture_output=True, text=True)
         return result.stdout.strip() if result.returncode == 0 else ""
@@ -308,17 +309,33 @@ def process_identity(pid: int) -> tuple[str, str] | None:
         return None
     started = query(["ps", "-p", str(pid), "-o", "lstart="])
     cwd = query(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"])
-    if f"n{ROOT}" not in cwd.splitlines() or not started:
+    directories = [Path(line[1:]) for line in cwd.splitlines() if line.startswith("n")]
+    if len(directories) != 1 or not started:
         return None
+    directory = directories[0]
+    if directory != ROOT:
+        common = query(["git", "-C", str(ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"])
+        other = query(["git", "-C", str(directory), "rev-parse", "--path-format=absolute", "--git-common-dir"])
+        if not common or other != common:
+            return None
     executable = query(["lsof", "-a", "-p", str(pid), "-d", "txt", "-Fn"])
-    for name in ("gateway", "personal-assistant-agent"):
-        if f"n{ROOT / 'bin' / name}" in executable.splitlines():
+    for name in ("gateway", "personal-assistant-agent", "account-agent"):
+        if f"n{directory / 'bin' / name}" in executable.splitlines():
             return name, started
+    command = query(["ps", "-p", str(pid), "-o", "args="])
+    try:
+        arguments = shlex.split(command)
+    except ValueError:
+        return None
+    if (len(arguments) == 3 and arguments[1:] == ["-m", "nova_bridge.server"]
+            and Path(arguments[0]).name.lower().startswith("python")
+            and (directory / "services/nova-bridge").is_dir()):
+        return "nova-bridge (legado)", started
     return None
 
 
 def ensure_ports(ports: list[tuple[int, str]]) -> None:
-    """Offer graceful stop of recognized listeners only, rechecking identity before signaling."""
+    """Stop recognized listeners gracefully, rechecking identity before signaling."""
     occupied = []
     for port, host in ports:
         try:
@@ -344,8 +361,6 @@ def ensure_ports(ports: list[tuple[int, str]]) -> None:
     for port, pid, identity in occupied:
         print(f"  {identity[0]} · porta {port} · PID {pid}")
     print("Encerrar interrompe conversas ativas. Bancos serão preservados.")
-    if not yes("Encerrar esses serviços para iniciar o ambiente escolhido?"):
-        raise RuntimeError("Inicialização cancelada; serviços existentes preservados.")
     for _, pid, identity in occupied:
         current = process_identity(pid)
         if current is None:
@@ -490,12 +505,20 @@ def main() -> int:
     parser.add_argument("--gateway-port", type=int, default=8080, help="Porta local do gateway (padrão 8080).")
     parser.add_argument("--agent-mode", choices=["remote"], default="remote", help="Somente remoto; rollback exige v0.10.x.")
     parser.add_argument("--agent-port", type=int, default=8090, help="Porta loopback do agente remoto.")
+    parser.add_argument("--account", action="store_true", help="Inicia Conta e Agenda/notas, incluindo MCPs Spring.")
     parser.add_argument("--mcps", help="Nomes do catálogo separados por vírgula; substitui a seleção interativa de MCPs.")
     args = parser.parse_args()
     if not 1 <= args.gateway_port <= 65535 or not 1 <= args.agent_port <= 65535 or args.agent_port == args.gateway_port:
         parser.error("Use uma porta entre 1 e 65535.")
     print("Nova Voice · assistente de ambiente local")
-    nova = choose("Qual ambiente deseja iniciar?", ["Fake — sem microfone/AWS/MCPs", "Nova 2 Sonic — AWS + MCPs opcionais"], 2) == 2
+    if args.account:
+        from dev_account import interactive
+        return interactive(args)
+    choice = choose("Qual ambiente deseja iniciar?", ["Fake — sem microfone/AWS/MCPs", "Nova 2 Sonic — AWS + MCPs opcionais", "Conta + Agenda/notas — fake local", "Conta + Agenda/notas — Nova e Cognito existentes"], 2)
+    if choice >= 3:
+        from dev_account import interactive
+        return interactive(args, nova=choice == 4)
+    nova = choice == 2
     profile = (input("Perfil AWS existente [default]: ").strip() or "default") if nova else "default"
     if len(profile) > 128 or any(ord(char) < 32 for char in profile):
         raise RuntimeError("Nome de perfil inválido.")

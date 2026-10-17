@@ -28,7 +28,11 @@ func TestLiteLLMLocalGateway(t *testing.T) {
 	if len(tools) != 7 {
 		t.Fatalf("discovered %d tools", len(tools))
 	}
-	createArgs := json.RawMessage(`{"title":"LiteLLM E2E","content":"signed envelope 8042"}`)
+	content := os.Getenv("STS_TEST_PRIVACY_CANARY")
+	if content == "" {
+		content = "signed envelope 8042"
+	}
+	createArgs, _ := json.Marshal(map[string]string{"title": "LiteLLM E2E", "content": content})
 	created, err := gateway.Call(ctx, "memo.notes.create", createArgs, "litellm-e2e-create", false)
 	if err != nil || created.IsError || mcp.Status(created) != "created" {
 		t.Fatal(created, err)
@@ -53,5 +57,16 @@ func TestLiteLLMLocalGateway(t *testing.T) {
 	deleted, err := gateway.Call(ctx, "memo.notes.delete", deleteArgs, "litellm-e2e-delete", true)
 	if err != nil || deleted.IsError || mcp.Status(deleted) != "deleted" {
 		t.Fatal(deleted, err)
+	}
+	for _, tool := range []string{"local.agenda.list_events", "local.agenda.list_slots"} {
+		args := map[string]any{"start": "2026-10-07T09:00:00-03:00", "end": "2026-10-07T10:00:00-03:00"}
+		if tool == "local.agenda.list_slots" {
+			args["duration_minutes"] = 30
+		}
+		raw, _ := json.Marshal(args)
+		result, err := gateway.Call(ctx, tool, raw, "litellm-e2e-"+tool, false)
+		if err != nil || result.IsError || mcp.Status(result) != "ok" {
+			t.Fatal("Agenda MCP v1 regression failed")
+		}
 	}
 }

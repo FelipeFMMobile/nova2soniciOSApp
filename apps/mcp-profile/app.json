@@ -1,0 +1,19 @@
+{
+  "name": "mcp-profile",
+  "language": "java",
+  "build": [
+    "./mvnw",
+    "-B",
+    "verify"
+  ],
+  "test": [
+    "./mvnw",
+    "-B",
+    "test"
+  ],
+  "run": [
+    "java",
+    "-jar",
+    "target/mcp-profile-0.1.0.jar"
+  ]
+}

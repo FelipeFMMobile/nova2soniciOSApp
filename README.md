@@ -1,9 +1,14 @@
 # STS Model POC
 
 Assistente speech-to-speech em português brasileiro. O app Apple envia PCM16
-para um gateway Go. O gateway cuida do transporte público e entrega a sessão à
+para um gateway Go. No fluxo Agenda/notas, o gateway entrega a sessão à
 aplicação `personal-assistant-agent`, dona da conversa e do acesso ao endpoint
 Realtime do LiteLLM para chegar ao Amazon Nova 2 Sonic no Bedrock.
+
+O agente **Conta**, habilitado por configuração, acrescenta login guiado e perfil
+com serviços Spring AI e PostgreSQL independentes. Veja o [guia Conta](docs/domains/account-development.md).
+Para validar sem AWS: `make account-smoke`; para incluir login, restauração e logout
+no simulador iOS: `make account-ui-test`.
 
 ```text
 App Apple / voice-client → voice-gateway (:8080) → personal-assistant-agent
@@ -22,7 +27,8 @@ componente com o perfil AWS e também a fonte de monitoramento de custo. Cada
 aplicação MCP possui seus contratos, regras, migrações e dados; o gateway possui
 o contrato público de voz. Prompt, confirmação e perfis confiáveis de consumo
 pertencem ao agente. `agent-session/v1` remoto em loopback é o padrão. O gateway
-não recebe credenciais LiteLLM/MCP. O gateway não carrega o runtime do agente. Desde `v0.11.0`, rollback exige
+não recebe chaves LiteLLM nem segredos de assinatura MCP. Conta acrescenta um token
+de serviço para validar identidade pelo canal de controle. O gateway não carrega o runtime do agente. Desde `v0.11.0`, rollback exige
 restaurar o conjunto de binários/configuração `v0.10.x`.
 
 ![Arquitetura da POC](docs/images/architecture-litellm.png)

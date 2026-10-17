@@ -1,0 +1,65 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DiscoverDevelopmentConfiguration",
+      "Effect": "Allow",
+      "Action": ["cognito-idp:ListUserPools", "cognito-idp:DescribeUserPoolDomain", "ses:GetAccount"],
+      "Resource": "*",
+      "Condition": {"StringEquals": {"aws:RequestedRegion": "us-east-1"}}
+    },
+    {
+      "Sid": "CreateTaggedDevelopmentPool",
+      "Effect": "Allow",
+      "Action": "cognito-idp:CreateUserPool",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"aws:RequestedRegion": "us-east-1", "aws:RequestTag/Project": "sts-account-dev"}}
+    },
+    {
+      "Sid": "TagPoolAtDevelopmentCreation",
+      "Effect": "Allow",
+      "Action": "cognito-idp:TagResource",
+      "Resource": "arn:aws:cognito-idp:us-east-1:111122223333:userpool/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "sts-account-dev",
+          "aws:RequestTag/Environment": "development"
+        },
+        "ForAllValues:StringEquals": {"aws:TagKeys": ["Project", "Environment"]}
+      }
+    },
+    {
+      "Sid": "ConfigureOnlyTaggedDevelopmentPools",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool",
+        "cognito-idp:GetUserPoolMfaConfig",
+        "cognito-idp:SetUserPoolMfaConfig",
+        "cognito-idp:ListUserPoolClients",
+        "cognito-idp:CreateUserPoolClient",
+        "cognito-idp:DescribeUserPoolClient",
+        "cognito-idp:CreateUserPoolDomain",
+        "cognito-idp:CreateManagedLoginBranding",
+        "cognito-idp:DescribeManagedLoginBrandingByClient",
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminSetUserMFAPreference"
+      ],
+      "Resource": "arn:aws:cognito-idp:us-east-1:111122223333:userpool/*",
+      "Condition": {"StringEquals": {"aws:ResourceTag/Project": "sts-account-dev"}}
+    },
+    {
+      "Sid": "VerifyOnlyChosenEmailIdentity",
+      "Effect": "Allow",
+      "Action": ["ses:CreateEmailIdentity", "ses:GetEmailIdentity"],
+      "Resource": "arn:aws:ses:us-east-1:111122223333:identity/account-dev@example.com"
+    },
+    {
+      "Sid": "CreateOnlyCognitoEmailServiceRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::111122223333:role/aws-service-role/email.cognito-idp.amazonaws.com/AWSServiceRoleForAmazonCognitoIdpEmailService",
+      "Condition": {"StringEquals": {"iam:AWSServiceName": "email.cognito-idp.amazonaws.com"}}
+    }
+  ]
+}

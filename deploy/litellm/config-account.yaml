@@ -1,0 +1,75 @@
+model_list:
+  - model_name: nova-sonic
+    litellm_params:
+      model: bedrock/amazon.nova-2-sonic-v1:0
+      aws_region_name: us-east-1
+    model_info:
+      mode: realtime
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+  disable_spend_logs: false
+  store_prompts_in_spend_logs: false
+
+litellm_settings:
+  # Spend metadata is durable in PostgreSQL; conversation content is not.
+  turn_off_message_logging: true
+  log_raw_request_response: false
+
+mcp_servers:
+  notes:
+    server_id: sts-notes
+    alias: memo
+    transport: stdio
+    command: /app/bin/mcp-notes
+    args: ["-db", "/data/notes.sqlite", "-context-mode", "envelope"]
+    env:
+      STS_MCP_CONTEXT_SECRET: os.environ/STS_MCP_CONTEXT_SECRET
+    allowed_tools: [notes.create, notes.list, notes.delete]
+    allow_all_keys: false
+    # Requests arrive from the Docker host bridge. Network exposure is still
+    # constrained by the loopback-only published port in compose.yaml.
+    available_on_public_internet: true
+    spec_version: "2025-11-25"
+  agenda:
+    server_id: sts-agenda
+    alias: local
+    transport: stdio
+    command: /app/bin/mcp-agenda
+    args: ["-db", "/data/agenda.sqlite", "-context-mode", "envelope"]
+    env:
+      STS_MCP_CONTEXT_SECRET: os.environ/STS_MCP_CONTEXT_SECRET
+    allowed_tools: [agenda.list_slots, agenda.list_events, agenda.create_event, agenda.cancel_event]
+    allow_all_keys: false
+    available_on_public_internet: true
+    spec_version: "2025-11-25"
+
+  identity:
+    server_id: sts-identity
+    alias: identity
+    transport: http
+    url: http://identity:8092/mcp
+    static_headers:
+      Authorization: "os.environ/STS_IDENTITY_BEARER"
+    allowed_tools: [identity.begin_login, identity.login_status, identity.logout]
+    allow_all_keys: false
+    available_on_public_internet: true
+  profile:
+    server_id: sts-profile
+    alias: profile
+    transport: http
+    url: http://profile:8093/mcp
+    static_headers:
+      Authorization: "os.environ/STS_PROFILE_BEARER"
+    allowed_tools: [profile.get_me, profile.update_me]
+    allow_all_keys: false
+    available_on_public_internet: true
+
+guardrails:
+  - guardrail_name: account-policy
+    litellm_params:
+      guardrail: account_policy.AccountPolicy
+      mode: [pre_mcp_call, post_mcp_call]
+      default_on: true

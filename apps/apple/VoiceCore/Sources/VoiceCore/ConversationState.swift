@@ -35,7 +35,7 @@ public struct ConversationState: Sendable {
     public mutating func disconnect() { state = "disconnected"; sessionId = nil; outputTurnId = nil; sequence = 0 }
 
     public mutating func handle(_ event: VoiceEvent) throws -> [VoiceEffect] {
-        guard event.version == 1 else { throw VoiceFailure.invalidEvent }
+        guard event.version == 1 || event.version == 2 else { throw VoiceFailure.invalidEvent }
         if event.type == "error" { throw VoiceFailure.disconnected }
         if event.type == "session.ready" {
             guard sessionId == nil, let id = event.sessionId, Self.validId(id) else { throw VoiceFailure.invalidEvent }
@@ -74,6 +74,7 @@ public struct ConversationState: Sendable {
             let status: String
             if event.type == "tool.started" { status = "Em execução" }
             else if event.type == "tool.confirmation" || tool.resultStatus == "confirmation_required" { status = "Aguardando confirmação" }
+            else if tool.resultStatus == "cancelled" { status = "Cancelado" }
             else { status = tool.failed ? "Falhou ou resultado incerto" : "Concluído" }
             let pending = status == "Aguardando confirmação"
             let details = event.message ?? tool.result?.pretty ?? tool.arguments?.pretty ?? ""

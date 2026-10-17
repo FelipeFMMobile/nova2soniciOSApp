@@ -164,6 +164,27 @@ func realtimeTools(specs []agentwire.ToolSpec) []map[string]any {
 
 func (s *Stream) Events() <-chan Event { return s.events }
 
+// SendText submits cross-modal input to Nova Sonic through LiteLLM. The caller
+// owns the request text; no text or audio is fabricated as provider output.
+func (s *Stream) SendText(text string) error {
+	if len(text) == 0 || len(text) > 8192 {
+		return errors.New("invalid realtime text input")
+	}
+	message := map[string]any{"type": "conversation.item.create", "item": map[string]any{
+		"type": "message", "role": "user", "content": []map[string]string{{"type": "input_text", "text": text}},
+	}}
+	_ = s.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err := s.conn.WriteJSON(message); err != nil {
+		return errors.New("LiteLLM Realtime text transport disconnected")
+	}
+	// The pinned LiteLLM adapter requires response.create to trigger generation
+	// before any client audio is streamed.
+	if err := s.conn.WriteJSON(map[string]string{"type": "response.create"}); err != nil {
+		return errors.New("LiteLLM Realtime response request failed")
+	}
+	return nil
+}
+
 func (s *Stream) SendAudio(encoded string) error {
 	_ = s.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err := s.conn.WriteJSON(map[string]string{"type": "input_audio_buffer.append", "audio": encoded}); err != nil {

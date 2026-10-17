@@ -25,24 +25,27 @@ const (
 	proofHeader    = "X-STS-Agent-Proof"
 )
 
-func serverProof(token, agentID, nonce string) string {
+func serverProof(token, agentID, nonce string) string { return proof(Protocol, token, agentID, nonce) }
+func proof(protocol, token, agentID, nonce string) string {
 	mac := hmac.New(sha256.New, []byte(token))
-	_, _ = mac.Write([]byte(Protocol + "\x00" + agentID + "\x00" + nonce))
+	_, _ = mac.Write([]byte(protocol + "\x00" + agentID + "\x00" + nonce))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // clientCredential is deliberately distinct from the server proof key. A process
 // occupying the configured port must not learn the key needed to impersonate it.
-func clientCredential(token, agentID string) string {
+func clientCredential(token, agentID string) string { return credential(Protocol, token, agentID) }
+func credential(protocol, token, agentID string) string {
 	mac := hmac.New(sha256.New, []byte(token))
-	_, _ = mac.Write([]byte(Protocol + "\x00client-bearer\x00" + agentID))
+	_, _ = mac.Write([]byte(protocol + "\x00client-bearer\x00" + agentID))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
 type Endpoint struct {
-	AgentID string
-	URL     string
-	Token   string
+	Protocol string
+	AgentID  string
+	URL      string
+	Token    string
 }
 
 func ValidateEndpoint(endpoint Endpoint) error {
@@ -74,6 +77,12 @@ func NewRemoteFactory(endpoints []Endpoint) (*RemoteFactory, error) {
 		return nil, errors.New("agent catalog requires one to sixteen endpoints")
 	}
 	for _, endpoint := range endpoints {
+		if endpoint.Protocol == "" {
+			endpoint.Protocol = Protocol
+		}
+		if endpoint.Protocol != Protocol && endpoint.Protocol != ProtocolV2 {
+			return nil, errors.New("unsupported agent protocol")
+		}
 		if err := ValidateEndpoint(endpoint); err != nil {
 			return nil, err
 		}
@@ -91,8 +100,8 @@ func (f *RemoteFactory) Open(ctx context.Context, start AgentSessionStart) (Agen
 		return nil, errors.New("unknown agent identity")
 	}
 	headers := http.Header{}
-	headers.Set("Authorization", "Bearer "+clientCredential(endpoint.Token, endpoint.AgentID))
-	headers.Set(protocolHeader, Protocol)
+	headers.Set("Authorization", "Bearer "+credential(endpoint.Protocol, endpoint.Token, endpoint.AgentID))
+	headers.Set(protocolHeader, endpoint.Protocol)
 	nonceBytes := make([]byte, 32)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		return nil, errors.New("agent authentication challenge failed")
@@ -106,7 +115,7 @@ func (f *RemoteFactory) Open(ctx context.Context, start AgentSessionStart) (Agen
 		}
 		return nil, errors.New("agent endpoint unavailable")
 	}
-	if response == nil || subtle.ConstantTimeCompare([]byte(response.Header.Get(proofHeader)), []byte(serverProof(endpoint.Token, endpoint.AgentID, nonce))) != 1 {
+	if response == nil || subtle.ConstantTimeCompare([]byte(response.Header.Get(proofHeader)), []byte(proof(endpoint.Protocol, endpoint.Token, endpoint.AgentID, nonce))) != 1 {
 		_ = connection.Close()
 		return nil, errors.New("agent endpoint identity mismatch")
 	}
@@ -116,7 +125,7 @@ func (f *RemoteFactory) Open(ctx context.Context, start AgentSessionStart) (Agen
 	}
 	connection.SetReadLimit(MaxMessageBytes)
 	_ = connection.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if err := connection.WriteJSON(Message{Protocol: Protocol, Kind: OpenSession, AgentID: start.AgentID, Start: &start}); err != nil {
+	if err := connection.WriteJSON(Message{Protocol: endpoint.Protocol, Kind: OpenSession, AgentID: start.AgentID, Start: &start}); err != nil {
 		return fail(errors.New("agent session open failed"))
 	}
 	_ = connection.SetReadDeadline(time.Now().Add(5 * time.Second))
@@ -124,17 +133,18 @@ func (f *RemoteFactory) Open(ctx context.Context, start AgentSessionStart) (Agen
 	if err != nil || kind != websocket.TextMessage {
 		return fail(errors.New("agent session handshake failed"))
 	}
-	message, err := Decode(data)
-	if err != nil || message.ValidateAccepted(start.AgentID) != nil {
+	message, err := DecodeProtocol(data, endpoint.Protocol)
+	if err != nil || message.ValidateAccepted(start.AgentID) != nil || message.Protocol != endpoint.Protocol {
 		return fail(errors.New("agent session protocol mismatch"))
 	}
 	_ = connection.SetReadDeadline(time.Time{})
-	s := &remoteSession{connection: connection, sessionID: start.SessionID, events: make(chan AgentEvent, RemoteQueueDepth), stop: make(chan struct{}), done: make(chan struct{})}
+	s := &remoteSession{protocol: endpoint.Protocol, connection: connection, sessionID: start.SessionID, events: make(chan AgentEvent, RemoteQueueDepth), stop: make(chan struct{}), done: make(chan struct{})}
 	go s.read()
 	return s, nil
 }
 
 type remoteSession struct {
+	protocol   string
 	connection *websocket.Conn
 	sessionID  string
 	events     chan AgentEvent
@@ -167,8 +177,8 @@ func (s *remoteSession) read() {
 			}
 			return
 		}
-		message, err := Decode(data)
-		if err != nil || message.ValidateEvent() != nil {
+		message, err := DecodeProtocol(data, s.protocol)
+		if err != nil || message.ValidateEvent() != nil || message.Protocol != s.protocol {
 			select {
 			case s.events <- AgentEvent{Type: AgentError, Code: "agent_protocol_error", Message: "agent returned an invalid event"}:
 			default:
@@ -184,7 +194,7 @@ func (s *remoteSession) read() {
 }
 
 func (s *remoteSession) Send(ctx context.Context, command AgentCommand) error {
-	message := Message{Protocol: Protocol, Kind: SessionCommand, Command: &command}
+	message := Message{Protocol: s.protocol, Kind: SessionCommand, Command: &command}
 	if err := message.ValidateCommand(s.sessionID); err != nil {
 		return err
 	}
@@ -222,6 +232,7 @@ func (s *remoteSession) Close() error {
 }
 
 type ServerConfig struct {
+	Protocol     string
 	AgentID      string
 	Token        string
 	ReadTimeout  time.Duration
@@ -237,6 +248,12 @@ type Handler struct {
 }
 
 func NewHandler(config ServerConfig, factory AgentSessionFactory) (*Handler, error) {
+	if config.Protocol == "" {
+		config.Protocol = Protocol
+	}
+	if config.Protocol != Protocol && config.Protocol != ProtocolV2 {
+		return nil, errors.New("unsupported agent protocol")
+	}
 	if !identifier.MatchString(config.AgentID) || config.Token == "" || factory == nil || config.ReadTimeout <= 0 || config.WriteTimeout <= 0 || config.IdleTimeout <= 0 || config.MaxSessions <= 0 || config.MaxSessions > MaxRemoteSessions {
 		return nil, errors.New("invalid Agent Session server configuration")
 	}
@@ -244,11 +261,15 @@ func NewHandler(config ServerConfig, factory AgentSessionFactory) (*Handler, err
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/v1/session" || r.Method != http.MethodGet {
+	path := "/v1/session"
+	if h.config.Protocol == ProtocolV2 {
+		path = "/v2/session"
+	}
+	if r.URL.Path != path || r.Method != http.MethodGet {
 		http.NotFound(w, r)
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+clientCredential(h.config.Token, h.config.AgentID))) != 1 || r.Header.Get(protocolHeader) != Protocol {
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+credential(h.config.Protocol, h.config.Token, h.config.AgentID))) != 1 || r.Header.Get(protocolHeader) != h.config.Protocol {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -267,8 +288,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	responseHeaders := http.Header{}
-	responseHeaders.Set(proofHeader, serverProof(h.config.Token, h.config.AgentID, nonce))
-	responseHeaders.Set(protocolHeader, Protocol)
+	responseHeaders.Set(proofHeader, proof(h.config.Protocol, h.config.Token, h.config.AgentID, nonce))
+	responseHeaders.Set(protocolHeader, h.config.Protocol)
 	connection, err := (&websocket.Upgrader{HandshakeTimeout: h.config.ReadTimeout, CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "" }}).Upgrade(w, r, responseHeaders)
 	if err != nil {
 		return
@@ -280,11 +301,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil || kind != websocket.TextMessage {
 		return
 	}
-	message, err := Decode(data)
-	if err != nil || message.ValidateOpen() != nil || message.AgentID != h.config.AgentID {
+	message, err := DecodeProtocol(data, h.config.Protocol)
+	if err != nil || message.ValidateOpen() != nil || message.AgentID != h.config.AgentID || message.Protocol != h.config.Protocol {
 		_ = connection.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "invalid session open"), time.Now().Add(h.config.WriteTimeout))
 		return
 	}
+	message.Start.Protocol = h.config.Protocol
 	session, err := h.factory.Open(r.Context(), *message.Start)
 	if err != nil {
 		_ = connection.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "agent rejected session"), time.Now().Add(h.config.WriteTimeout))
@@ -292,7 +314,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer session.Close()
 	_ = connection.SetWriteDeadline(time.Now().Add(h.config.WriteTimeout))
-	if err := connection.WriteJSON(Message{Protocol: Protocol, Kind: SessionAccepted, AgentID: h.config.AgentID}); err != nil {
+	if err := connection.WriteJSON(Message{Protocol: h.config.Protocol, Kind: SessionAccepted, AgentID: h.config.AgentID}); err != nil {
 		return
 	}
 	_ = connection.SetReadDeadline(time.Now().Add(h.config.IdleTimeout))
@@ -320,7 +342,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			wire := Message{Protocol: Protocol, Kind: SessionEvent, Event: &event}
+			wire := Message{Protocol: h.config.Protocol, Kind: SessionEvent, Event: &event}
 			if wire.ValidateEvent() != nil {
 				return
 			}
@@ -343,8 +365,8 @@ func (h *Handler) readCommands(ctx context.Context, connection *websocket.Conn, 
 			return
 		}
 		_ = connection.SetReadDeadline(time.Now().Add(h.config.IdleTimeout))
-		message, err := Decode(data)
-		if err != nil || message.ValidateCommand(sessionID) != nil {
+		message, err := DecodeProtocol(data, h.config.Protocol)
+		if err != nil || message.ValidateCommand(sessionID) != nil || message.Protocol != h.config.Protocol {
 			failed <- errors.New("invalid agent command")
 			return
 		}

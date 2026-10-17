@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "cognito-idp:TagResource",
+    "Resource": "arn:aws:cognito-idp:us-east-1:111122223333:userpool/*",
+    "Condition": {
+      "StringEquals": {
+        "aws:RequestTag/Project": "sts-account-dev",
+        "aws:RequestTag/Environment": "development"
+      },
+      "ForAllValues:StringEquals": {"aws:TagKeys": ["Project", "Environment"]}
+    }
+  }]
+}

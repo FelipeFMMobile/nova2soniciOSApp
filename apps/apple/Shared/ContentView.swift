@@ -16,6 +16,11 @@ struct ContentView: View {
                     Text(model.provider == "fake" ? "FAKE" : "NOVA 2 SONIC")
                         .font(.caption.bold()).padding(8).background(accent.opacity(0.14), in: Capsule())
                 }
+                Picker("Agente", selection: $model.selectedAgent) {
+                    Text("Agenda / notas").tag("personal-assistant")
+                    Text("Conta").tag("account")
+                }.pickerStyle(.segmented).accessibilityIdentifier("conversation.agent")
+                if model.selectedAgent == "account" { AccountPanel(model: model, account: model.account) }
                 VStack(spacing: 18) {
                     Image(systemName: model.playing ? "waveform" : "mic.fill")
                         .font(.system(size: 48)).foregroundStyle(accent)
@@ -81,17 +86,23 @@ struct ContentView: View {
                 if !model.conversation.operations.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Ferramentas MCP").font(.title3.bold())
-                        ForEach(model.conversation.operations) { operation in
+                        ForEach(model.conversation.operations.filter { $0.id != "account-login-consent" }) { operation in
                             VStack(alignment: .leading, spacing: 8) {
                                 Label(operation.name, systemImage: "wrench.and.screwdriver").font(.headline)
                                 Text(operation.status).font(.subheadline).foregroundStyle(operation.needsConfirmation ? .orange : accent)
-                                if !operation.arguments.isEmpty {
+                                if model.selectedAgent != "account" && !operation.arguments.isEmpty {
                                     DisclosureGroup("Argumentos reais enviados pela Nova") {
                                         Text(operation.arguments).font(.caption.monospaced()).textSelection(.enabled)
                                     }
                                 }
-                                if operation.needsConfirmation { Text("Responda por voz com a confirmação solicitada pelo assistente.").font(.footnote) }
-                                DisclosureGroup("Detalhes do resultado") { Text(operation.details).font(.caption.monospaced()).textSelection(.enabled) }
+                                if operation.needsConfirmation {
+                                    Text("Responda por voz com a confirmação solicitada pelo assistente.").font(.footnote)
+                                    if model.selectedAgent == "account" {
+                                        Text(operation.arguments).font(.body)
+                                        HStack { Button("Confirmar alteração") { model.confirmAccount(operation.id, approved: true) }; Button("Cancelar") { model.confirmAccount(operation.id, approved: false) } }
+                                    }
+                                }
+                                if model.selectedAgent != "account" { DisclosureGroup("Detalhes do resultado") { Text(operation.details).font(.caption.monospaced()).textSelection(.enabled) } }
                             }.padding(16).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
                         }
                     }
@@ -111,6 +122,9 @@ struct ContentView: View {
             .frame(minWidth: 480, minHeight: 640)
         #endif
             .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() } }
+            .sheet(isPresented: $model.showAccountLogin, onDismiss: { if !model.account.authenticated { model.dismissAccountLogin() } }) {
+                AccountLoginModal(model: model, account: model.account)
+            }
             .onDisappear { model.shutdown() }
     }
 }

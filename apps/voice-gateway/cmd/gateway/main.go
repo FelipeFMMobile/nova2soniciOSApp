@@ -30,7 +30,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	done := make(chan error, 1)
-	go func() { done <- server.ListenAndServe() }()
+	go func() {
+		if cert := os.Getenv("STS_TLS_CERT"); cert != "" {
+			done <- server.ListenAndServeTLS(cert, os.Getenv("STS_TLS_KEY"))
+		} else {
+			done <- server.ListenAndServe()
+		}
+	}()
 	logger.Info("gateway listening", "address", cfg.GatewayAddress, "provider", cfg.Provider)
 	select {
 	case err := <-done:

@@ -45,10 +45,15 @@ type ToolSpec struct {
 // Principal is the authenticated client identity asserted by the voice edge.
 // Subject is opaque to the transport and must never be accepted from Voice v1.
 type Principal struct {
-	Subject string `json:"subject"`
+	Subject       string `json:"subject"`
+	ClientCode    string `json:"clientCode,omitempty"`
+	SessionRef    string `json:"sessionRef,omitempty"`
+	DeviceID      string `json:"deviceId,omitempty"`
+	Authenticated bool   `json:"authenticated,omitempty"`
 }
 
 type AgentSessionStart struct {
+	Protocol  string    `json:"-"`
 	SessionID string    `json:"sessionId"`
 	RequestID string    `json:"requestId,omitempty"`
 	AgentID   string    `json:"agentId"`
@@ -80,20 +85,21 @@ type AgentTool struct {
 }
 
 type AgentEvent struct {
-	Type       string        `json:"type"`
-	TurnID     string        `json:"turnId,omitempty"`
-	Sequence   uint64        `json:"sequence,omitempty"`
-	Provider   string        `json:"provider,omitempty"`
-	State      string        `json:"state,omitempty"`
-	Audio      []byte        `json:"audio,omitempty"`
-	SampleRate int           `json:"sampleRate,omitempty"`
-	Text       string        `json:"text,omitempty"`
-	Role       string        `json:"role,omitempty"`
-	Stage      string        `json:"stage,omitempty"`
-	Code       string        `json:"code,omitempty"`
-	Message    string        `json:"message,omitempty"`
-	Metrics    *AgentMetrics `json:"metrics,omitempty"`
-	Tool       *AgentTool    `json:"tool,omitempty"`
+	UI         json.RawMessage `json:"ui,omitempty"`
+	Type       string          `json:"type"`
+	TurnID     string          `json:"turnId,omitempty"`
+	Sequence   uint64          `json:"sequence,omitempty"`
+	Provider   string          `json:"provider,omitempty"`
+	State      string          `json:"state,omitempty"`
+	Audio      []byte          `json:"audio,omitempty"`
+	SampleRate int             `json:"sampleRate,omitempty"`
+	Text       string          `json:"text,omitempty"`
+	Role       string          `json:"role,omitempty"`
+	Stage      string          `json:"stage,omitempty"`
+	Code       string          `json:"code,omitempty"`
+	Message    string          `json:"message,omitempty"`
+	Metrics    *AgentMetrics   `json:"metrics,omitempty"`
+	Tool       *AgentTool      `json:"tool,omitempty"`
 }
 
 type AgentSession interface {

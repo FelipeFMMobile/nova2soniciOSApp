@@ -1,0 +1,105 @@
+services:
+  identity-db:
+    image: postgres:16.4-bookworm
+    environment:
+      POSTGRES_DB: identity
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: ${STS_IDENTITY_DB_PASSWORD:?required}
+    volumes: [identity-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U identity]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  profile-db:
+    image: postgres:16.4-bookworm
+    environment:
+      POSTGRES_DB: profile
+      POSTGRES_USER: profile
+      POSTGRES_PASSWORD: ${STS_PROFILE_DB_PASSWORD:?required}
+    volumes: [profile-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U profile]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  identity:
+    build:
+      context: ../..
+      dockerfile: apps/mcp-identity/Dockerfile
+    depends_on:
+      identity-db: {condition: service_healthy}
+    environment:
+      STS_ENV: development
+      STS_IDENTITY_PROVIDER: ${STS_IDENTITY_PROVIDER:-fake}
+      STS_DATABASE_URL: jdbc:postgresql://identity-db/identity
+      STS_DATABASE_USER: identity
+      STS_DATABASE_PASSWORD: ${STS_IDENTITY_DB_PASSWORD}
+      STS_SERVICE_TOKEN: ${STS_IDENTITY_SERVICE_TOKEN:?required}
+      STS_MCP_CONTEXT_SECRET: ${STS_ACCOUNT_CONTEXT_SECRET:?required}
+      STS_CLIENT_CODE_KEY: ${STS_CLIENT_CODE_KEY:?required}
+      STS_TOKEN_ENCRYPTION_KEY: ${STS_TOKEN_ENCRYPTION_KEY:?required}
+      STS_COGNITO_DOMAIN: ${STS_COGNITO_DOMAIN:-}
+      STS_COGNITO_CLIENT_ID: ${STS_COGNITO_CLIENT_ID:-}
+      STS_COGNITO_ISSUER: ${STS_COGNITO_ISSUER:-}
+      STS_COGNITO_REDIRECT_URI: stsvoice://oauth/callback
+      STS_GUARDRAIL_PROBES: enabled
+    ports: ["127.0.0.1:${STS_IDENTITY_PORT:-8092}:8092"]
+  profile:
+    build:
+      context: ../..
+      dockerfile: apps/mcp-profile/Dockerfile
+    depends_on:
+      profile-db: {condition: service_healthy}
+    environment:
+      STS_ENV: development
+      STS_DATABASE_URL: jdbc:postgresql://profile-db/profile
+      STS_DATABASE_USER: profile
+      STS_DATABASE_PASSWORD: ${STS_PROFILE_DB_PASSWORD}
+      STS_SERVICE_TOKEN: ${STS_PROFILE_SERVICE_TOKEN:?required}
+      STS_MCP_CONTEXT_SECRET: ${STS_ACCOUNT_CONTEXT_SECRET}
+      STS_IDENTITY_URL: http://identity:8092
+      STS_IDENTITY_SERVICE_TOKEN: ${STS_IDENTITY_SERVICE_TOKEN}
+    ports: ["127.0.0.1:${STS_PROFILE_PORT:-8093}:8093"]
+  usage-db:
+    image: postgres:16.4-bookworm
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${STS_USAGE_DB_PASSWORD:?required}
+    volumes: [usage-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U litellm]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  litellm:
+    build:
+      context: ../..
+      dockerfile: deploy/litellm/Dockerfile
+    depends_on:
+      usage-db: {condition: service_healthy}
+    command: [--config, /app/account.yaml, --host, 0.0.0.0, --port, "4000"]
+    environment:
+      DATABASE_URL: postgresql://litellm:${STS_USAGE_DB_PASSWORD}@usage-db:5432/litellm
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?required}
+      STS_IDENTITY_SERVICE_TOKEN: ${STS_IDENTITY_SERVICE_TOKEN}
+      STS_PROFILE_SERVICE_TOKEN: ${STS_PROFILE_SERVICE_TOKEN}
+      STS_MCP_CONTEXT_SECRET: ${STS_LEGACY_CONTEXT_SECRET:?required}
+      STS_AGENDA_FIXTURES: "false"
+      LITELLM_MCP_STDIO_EXTRA_COMMANDS: mcp-notes,mcp-agenda
+      STS_IDENTITY_BEARER: "Bearer ${STS_IDENTITY_SERVICE_TOKEN}"
+      STS_PROFILE_BEARER: "Bearer ${STS_PROFILE_SERVICE_TOKEN}"
+      PYTHONPATH: /app/account_guardrails
+      LITELLM_LOG: ERROR
+      AWS_REGION: us-east-1
+    ports: ["127.0.0.1:${STS_ACCOUNT_LITELLM_PORT:-4001}:4000"]
+    volumes:
+      - ../litellm/config-account.yaml:/app/account.yaml:ro
+      - ../litellm/guardrails:/app/account_guardrails:ro
+      - legacy-data:/data
+volumes:
+  identity-data:
+  profile-data:
+  usage-data:
+  legacy-data:

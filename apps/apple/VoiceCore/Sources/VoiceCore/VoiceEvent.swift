@@ -61,6 +61,8 @@ public struct VoiceMetrics: Codable, Equatable, Sendable {
 
 public struct VoiceEvent: Codable, Equatable, Sendable {
     public var version: Int = 1
+    public var agentId: String?
+    public var ui: JSONValue?
     public var type: String
     public var sessionId: String?
     public var turnId: String?
@@ -87,10 +89,10 @@ public struct VoiceEvent: Codable, Equatable, Sendable {
         self.sampleRate = sampleRate; self.text = text; self.role = role; self.stage = stage; self.tool = tool
     }
 
-    public static func decode(_ data: Data) throws -> Self {
+    public static func decode(_ data: Data, expectedVersion: Int = 1) throws -> Self {
         guard data.count <= 512 * 1024 else { throw VoiceFailure.invalidEvent }
         let event = try JSONDecoder().decode(Self.self, from: data)
-        guard event.version == 1 else { throw VoiceFailure.invalidEvent }; return event
+        guard [1, 2].contains(expectedVersion), event.version == expectedVersion else { throw VoiceFailure.invalidEvent }; return event
     }
     public func encoded() throws -> Data { try JSONEncoder().encode(self) }
 }

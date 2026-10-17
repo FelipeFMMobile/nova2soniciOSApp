@@ -1,0 +1,29 @@
+[
+  {
+    "name": "identity.begin_login",
+    "description": "Iniciar autenticação segura no aplicativo.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity.login_status",
+    "description": "Consultar estado da autenticação da sessão atual.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "identity.logout",
+    "description": "Encerrar a sessão autenticada atual.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+]

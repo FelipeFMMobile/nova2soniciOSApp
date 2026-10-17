@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/check every Go module with GOWORK=off; app manifests are language-neutral."""
+"""Build language-neutral app manifests and check independent Go modules."""
 import argparse
 import json
 import os
@@ -15,6 +15,7 @@ def modules():
     return [ROOT, *sorted((ROOT / 'packages/go').glob('*/go.mod')), *sorted((ROOT / 'apps').glob('*/go.mod'))]
 
 def boundaries():
+    app_names = [path.parent.name for path in (ROOT / 'apps').glob('*/go.mod')]
     for area in ['apps', 'packages/go']:
         for source in (ROOT / area).rglob('*.go'):
             if source.name.endswith('_test.go'):
@@ -39,18 +40,20 @@ def boundaries():
                         raise RuntimeError(f'Cross-application import: {source}: {imp}')
                 if source.is_relative_to(ROOT / 'apps/voice-gateway') and any(imp.startswith(prefix) for prefix in ['stsmodel.local/personal-assistant-agent', 'stsmodel.local/mcpwire', 'stsmodel.local/mcp-notes', 'stsmodel.local/mcp-agenda']):
                     raise RuntimeError(f'Gateway imports agent/MCP semantics: {source}: {imp}')
-                if area == 'packages/go' and any(imp.startswith('stsmodel.local/' + app + '/') for app in ['voice-gateway', 'personal-assistant-agent', 'mcp-notes', 'mcp-agenda', 'voice-client']):
+                if area == 'packages/go' and any(imp.startswith('stsmodel.local/' + app + '/') for app in app_names):
                     raise RuntimeError(f'Technical library imports app: {source}')
     print('Application boundaries OK', flush=True)
 
-def build_apps(env):
+def build_apps(env, language=None):
     (ROOT / 'bin').mkdir(exist_ok=True)
     for path in sorted((ROOT / 'apps').glob('*/app.json')):
         app = json.loads(path.read_text())
+        if language and app.get('language') != language:
+            continue
         subprocess.run(app['build'], cwd=path.parent, env=env, check=True)
 
 def isolated_builds(env):
-    for name in ['voice-gateway', 'personal-assistant-agent']:
+    for name in ['voice-gateway', 'personal-assistant-agent', 'account-agent']:
         with tempfile.TemporaryDirectory(prefix='sts-isolated-') as directory:
             isolated = Path(directory)
             shutil.copytree(ROOT / 'packages/go', isolated / 'packages/go')
@@ -69,6 +72,7 @@ def isolated_builds(env):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['build', 'test', 'race', 'vet', 'boundaries', 'isolated'])
+    parser.add_argument('--language', choices=['go', 'java'])
     args = parser.parse_args()
     boundaries()
     if args.action == 'boundaries':
@@ -79,7 +83,7 @@ def main():
         isolated_builds(env)
         return
     if args.action in ['build', 'test', 'race']:
-        build_apps(env)
+        build_apps(env, args.language)
     for entry in modules():
         directory = entry.parent if entry.name == 'go.mod' else entry
         print(f'{args.action}: {directory.relative_to(ROOT)}', flush=True)

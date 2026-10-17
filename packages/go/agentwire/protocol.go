@@ -11,6 +11,7 @@ import (
 
 const (
 	Protocol          = "agent-session/v1"
+	ProtocolV2        = "agent-session/v2"
 	OpenSession       = "session.open"
 	SessionAccepted   = "session.accepted"
 	SessionCommand    = "session.command"
@@ -27,6 +28,14 @@ func ValidatePrincipal(principal Principal) error {
 	if !identifier.MatchString(principal.Subject) {
 		return errors.New("invalid Agent Session principal")
 	}
+	if principal.Authenticated && (principal.ClientCode == "" || principal.SessionRef == "") {
+		return errors.New("incomplete authenticated principal")
+	}
+	for _, v := range []string{principal.ClientCode, principal.SessionRef, principal.DeviceID} {
+		if v != "" && !identifier.MatchString(v) {
+			return errors.New("invalid principal context")
+		}
+	}
 	return nil
 }
 
@@ -39,7 +48,9 @@ type Message struct {
 	Event    *AgentEvent        `json:"event,omitempty"`
 }
 
-func Decode(data []byte) (Message, error) {
+func Decode(data []byte) (Message, error) { return DecodeProtocol(data, Protocol) }
+
+func DecodeProtocol(data []byte, expected string) (Message, error) {
 	if len(data) == 0 || len(data) > MaxMessageBytes {
 		return Message{}, errors.New("invalid Agent Session message size")
 	}
@@ -52,8 +63,19 @@ func Decode(data []byte) (Message, error) {
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return Message{}, errors.New("trailing Agent Session JSON")
 	}
-	if message.Protocol != Protocol {
+	if (expected != Protocol && expected != ProtocolV2) || message.Protocol != expected {
 		return Message{}, errors.New("unsupported Agent Session protocol")
+	}
+	if message.Protocol == Protocol {
+		if message.Event != nil && len(message.Event.UI) != 0 {
+			return Message{}, errors.New("v2 event on v1")
+		}
+		if message.Start != nil {
+			p := message.Start.Principal
+			if p.ClientCode != "" || p.SessionRef != "" || p.DeviceID != "" || p.Authenticated {
+				return Message{}, errors.New("v2 identity on v1")
+			}
+		}
 	}
 	return message, nil
 }
@@ -130,6 +152,10 @@ func (m Message) ValidateEvent() error {
 	case ToolStarted, ToolResult, ToolConfirmation:
 		if !identifier.MatchString(e.TurnID) || e.Tool == nil || !identifier.MatchString(e.Tool.OperationID) {
 			return errors.New("invalid Agent Session tool event")
+		}
+	case "ui.a2ui":
+		if m.Protocol != ProtocolV2 || len(e.UI) == 0 || len(e.UI) > 16384 || !json.Valid(e.UI) {
+			return errors.New("invalid UI event")
 		}
 	case AgentError:
 		if e.Code == "" || e.Message == "" {
