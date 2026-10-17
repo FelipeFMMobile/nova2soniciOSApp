@@ -33,6 +33,9 @@ restaurar o conjunto de binários/configuração `v0.10.x`.
 
 ![Arquitetura da POC](docs/images/architecture-litellm.png)
 
+O diagrama inclui os agentes Agenda/notas e Conta, os MCPs de identidade/perfil,
+os bancos separados e o login Cognito/SES no modal Mac/iOS.
+
 O PNG é gerado por `scripts/render_architecture.swift`. Depois de alterar o
 fluxo, execute `make architecture-diagram` para mantê-lo sincronizado com a
 documentação.
