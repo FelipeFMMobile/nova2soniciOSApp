@@ -4,6 +4,7 @@ Assistente speech-to-speech em português brasileiro. O app Apple envia PCM16
 para um gateway Go. No fluxo Agenda/notas, o gateway entrega a sessão à
 aplicação `personal-assistant-agent`, dona da conversa e do acesso ao endpoint
 Realtime do LiteLLM para chegar ao Amazon Nova 2 Sonic no Bedrock.
+<img width="947" height="757" alt="Captura de Tela 2026-11-01 às 17 04 13" src="https://github.com/user-attachments/assets/1270b754-1c94-4092-b478-c722aae88222" />
 
 O agente **Conta**, habilitado por configuração, acrescenta login guiado e perfil
 com serviços Spring AI e PostgreSQL independentes. Veja o [guia Conta](docs/domains/account-development.md).
